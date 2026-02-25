@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>配置页面</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios@1.7.9/dist/axios.min.js"></script>
+  <style>
+    :root { --bg:#eef6fa; --card:#fff; --brand:#006c8a; --text:#1f2d3d; --line:#c7d9e5; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; font-family:"PingFang SC","Microsoft YaHei",sans-serif; background:linear-gradient(120deg, #e9f7ff 0%, #f8f6ee 100%); color:var(--text); }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 28px 16px; }
+    .card { background:var(--card); border-radius:16px; box-shadow:0 12px 32px rgba(16,43,68,.08); padding:24px; border:1px solid #dce8f0; }
+    h1 { margin:0 0 16px; font-size:30px; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    label { font-size:13px; color:#4c6176; }
+    input, select { width:100%; margin-top:6px; padding:10px; border-radius:10px; border:1px solid var(--line); background:#fff; }
+    .full { grid-column: 1 / -1; }
+    .row-inline { display:flex; gap:8px; align-items:flex-end; }
+    .row-inline .grow { flex:1; }
+    .tip { color:#6b7f93; font-size:12px; margin-top:6px; }
+    .actions { margin-top:18px; display:flex; gap:10px; }
+    button { background:var(--brand); color:#fff; border:none; border-radius:12px; padding:12px 18px; cursor:pointer; }
+    button.secondary { background:#e7f2f6; color:#21566a; border:1px solid #c3dbe6; }
+    @media (max-width:760px){ .grid{grid-template-columns:1fr;} .row-inline{flex-direction:column; align-items:stretch;} }
+  </style>
+</head>
+<body>
+<div id="app" class="wrap">
+  <div class="card">
+    <h1>初始化配置</h1>
+    <div class="grid">
+      <div>
+        <label>OpenAI API 模式（Responses / ChatCompletions）
+          <select v-model="form.llm_mode">
+            <option value="responses">responses</option>
+            <option value="chat_completions">chat_completions</option>
+          </select>
+        </label>
+      </div>
+      <div>
+        <label>模型名称（自动获取）
+          <div class="row-inline">
+            <div class="grow">
+              <select v-model="form.llm_model">
+                <option v-if="!modelOptions.length" value="">暂无可用模型</option>
+                <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
+              </select>
+            </div>
+            <button type="button" class="secondary" @click="loadModels" :disabled="loadingModels">
+              {{ loadingModels ? '获取中...' : '刷新模型' }}
+            </button>
+          </div>
+          <div class="tip">根据 API Base URL + API Key 自动读取 `/models` 列表。</div>
+        </label>
+      </div>
+      <div class="full">
+        <label>API Base URL
+          <input v-model="form.llm_base_url" @blur="loadModels" placeholder="https://api.openai.com/v1" />
+        </label>
+      </div>
+      <div class="full">
+        <label>API Key
+          <input v-model="form.llm_api_key" @blur="loadModels" type="password" placeholder="sk-..." />
+        </label>
+      </div>
+      <div>
+        <label>Codex OAuth Client ID
+          <input v-model="form.codex_client_id" />
+        </label>
+      </div>
+      <div>
+        <label>Codex OAuth Client Secret
+          <input v-model="form.codex_client_secret" type="password" />
+        </label>
+      </div>
+      <div>
+        <label>Codex Redirect URI
+          <input v-model="form.codex_redirect_uri" />
+        </label>
+      </div>
+      <div>
+        <label>Codex Access Token
+          <input v-model="form.codex_access_token" type="password" />
+        </label>
+      </div>
+      <div class="full">
+        <label>Codex MCP URL（用于触发Chrome DevTools MCP测试）
+          <input v-model="form.codex_mcp_url" placeholder="https://your-mcp-gateway/api/run" />
+        </label>
+      </div>
+    </div>
+    <div class="actions">
+      <button @click="save">保存并进入首页</button>
+    </div>
+  </div>
+</div>
+<script>
+const { createApp } = Vue;
+createApp({
+  data() {
+    return {
+      form: {
+        llm_mode: 'responses', llm_base_url: 'https://api.openai.com/v1', llm_api_key: '', llm_model: 'gpt-4.1-mini',
+        codex_client_id: '', codex_client_secret: '', codex_redirect_uri: '', codex_access_token: '', codex_mcp_url: ''
+      },
+      modelOptions: [],
+      loadingModels: false
+    }
+  },
+  async mounted() {
+    const r = await axios.get('/api/config');
+    this.form = { ...this.form, ...r.data };
+    await this.loadModels();
+  },
+  methods: {
+    async loadModels() {
+      if (!this.form.llm_base_url) return;
+      this.loadingModels = true;
+      try {
+        const r = await axios.post('/api/llm-models', {
+          llm_base_url: this.form.llm_base_url,
+          llm_api_key: this.form.llm_api_key
+        });
+        this.modelOptions = r.data.models || [];
+        if (this.form.llm_model && !this.modelOptions.includes(this.form.llm_model)) {
+          this.modelOptions.unshift(this.form.llm_model);
+        }
+        if (!this.form.llm_model && this.modelOptions.length) {
+          this.form.llm_model = this.modelOptions[0];
+        }
+      } catch (e) {
+        this.modelOptions = this.form.llm_model ? [this.form.llm_model] : [];
+      } finally {
+        this.loadingModels = false;
+      }
+    },
+    async save() {
+      await axios.post('/api/config', this.form);
+      location.href = '/home';
+    }
+  }
+}).mount('#app')
+</script>
+</body>
+</html>
