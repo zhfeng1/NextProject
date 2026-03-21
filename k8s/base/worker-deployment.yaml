@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nextproject-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nextproject-worker
+  template:
+    metadata:
+      labels:
+        app: nextproject-worker
+    spec:
+      containers:
+        - name: celery-worker
+          image: nextproject-main:latest
+          command:
+            - celery
+            - -A
+            - backend.core.celery_app
+            - worker
+            - -Q
+            - ai-tasks,deploy-tasks,test-tasks
+            - -c
+            - "4"
+            - -l
+            - info
+          envFrom:
+            - configMapRef:
+                name: nextproject-config
+          env:
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: nextproject-secrets
+                  key: SECRET_KEY

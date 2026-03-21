@@ -1,24 +1,274 @@
 services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: nextproject-postgres
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      POSTGRES_DB: nextproject
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-nextproject2025}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d nextproject"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: nextproject-redis
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis2025} --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis2025}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: nextproject-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin2025}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "20102:9001"   # MinIO 控制台
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
   main-service:
     build:
       context: .
       dockerfile: main_service/Dockerfile
-    container_name: main-service
-    ports:
-      - "18080:8080"
+      args:
+        INSTALL_DEV: "true"
+    container_name: nextproject-main-service
+    restart: unless-stopped
     volumes:
       - ./data:/shared
-      - ./generated_site:/generated_site
+      - ./generated_sites:/generated_sites
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://admin:nextproject2025@postgres:5432/nextproject}
+      - SYNC_DATABASE_URL=${SYNC_DATABASE_URL:-postgresql+psycopg://admin:nextproject2025@postgres:5432/nextproject}
+      - REDIS_URL=${REDIS_URL:-redis://:redis2025@redis:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:redis2025@redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:redis2025@redis:6379/1}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin2025}
+      - MINIO_SECURE=${MINIO_SECURE:-false}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - CODEX_MCP_BRIDGE_URL=http://codex-mcp:8090
+      - LLM_DIALOG_LOG_ENABLED=${LLM_DIALOG_LOG_ENABLED:-false}
+      - LLM_DIALOG_LOG_MAX_CHARS=${LLM_DIALOG_LOG_MAX_CHARS:-4000}
+      - SUB_SITE_PORT_START=${SUB_SITE_PORT_START:-19100}
+      - SUB_SITE_PORT_END=${SUB_SITE_PORT_END:-19999}
+      - AGENT_TASK_WORKERS=${AGENT_TASK_WORKERS:-2}
+      - PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL:-http://127.0.0.1:8080}
+      - CODEX_CMD=${CODEX_CMD:-codex exec}
+      - CLAUDE_CMD=${CLAUDE_CMD:-claude}
+      - GEMINI_CMD=${GEMINI_CMD:-gemini}
+      - CODEX_AUTH_CMD=${CODEX_AUTH_CMD:-codex login --device-auth}
+      - CLAUDE_AUTH_CMD=${CLAUDE_AUTH_CMD:-claude login}
+      - GEMINI_AUTH_CMD=${GEMINI_AUTH_CMD:-gemini auth login}
+      - GENERATED_SITES_ROOT=/generated_sites
+      - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-http://localhost:20100,http://127.0.0.1:20100}
+      - CORS_ALLOW_CREDENTIALS=${CORS_ALLOW_CREDENTIALS:-true}
     depends_on:
-      - new-site
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      codex-mcp:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
-  new-site:
+  codex-mcp:
     build:
       context: .
-      dockerfile: new_site/Dockerfile
-    container_name: new-site
-    ports:
-      - "18081:8081"
+      dockerfile: codex_mcp/Dockerfile
+    container_name: codex-mcp
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - ./data/codex_home:/root/.codex
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: main_service/Dockerfile
+      args:
+        INSTALL_DEV: "false"
+    container_name: nextproject-celery-worker
+    restart: unless-stopped
+    command: celery -A backend.core.celery_app worker -Q ai-tasks,deploy-tasks,test-tasks -c 4 -l info
     volumes:
       - ./data:/shared
-      - ./generated_site:/generated_site
+      - ./generated_sites:/generated_sites
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://admin:nextproject2025@postgres:5432/nextproject}
+      - SYNC_DATABASE_URL=${SYNC_DATABASE_URL:-postgresql+psycopg://admin:nextproject2025@postgres:5432/nextproject}
+      - REDIS_URL=${REDIS_URL:-redis://:redis2025@redis:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:redis2025@redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:redis2025@redis:6379/1}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - GENERATED_SITES_ROOT=/generated_sites
+      - PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL:-http://127.0.0.1:8080}
+      - CODEX_CMD=${CODEX_CMD:-codex exec}
+      - CLAUDE_CMD=${CLAUDE_CMD:-claude}
+      - GEMINI_CMD=${GEMINI_CMD:-gemini}
+    depends_on:
+      - postgres
+      - redis
+      - main-service
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A backend.core.celery_app inspect ping -d celery@$$HOSTNAME | grep -q pong"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: main_service/Dockerfile
+      args:
+        INSTALL_DEV: "false"
+    container_name: nextproject-celery-beat
+    restart: unless-stopped
+    command: celery -A backend.core.celery_app beat -l info
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:redis2025@redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:redis2025@redis:6379/1}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+    depends_on:
+      - redis
+
+  flower:
+    build:
+      context: .
+      dockerfile: main_service/Dockerfile
+      args:
+        INSTALL_DEV: "false"
+    container_name: nextproject-flower
+    restart: unless-stopped
+    command: celery -A backend.core.celery_app flower --port=5555 --basic-auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin2025}
+    ports:
+      - "20101:5555"   # Celery 任务监控
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:redis2025@redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:redis2025@redis:6379/1}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+    depends_on:
+      - redis
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: nextproject-prometheus
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: nextproject-grafana
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin2025}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - "20103:3000"   # Grafana 监控面板
+
+  test:
+    build:
+      context: .
+      dockerfile: main_service/Dockerfile
+      args:
+        INSTALL_DEV: "true"
+    container_name: nextproject-test
+    command: pytest backend/tests/ -v --cov=backend --cov-report=term-missing
+    volumes:
+      - .:/app
+      - ./data:/shared
+      - ./generated_sites:/generated_sites
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - DATABASE_URL=sqlite+aiosqlite:////shared/test_app.db
+      - SYNC_DATABASE_URL=sqlite:////shared/test_app.db
+      - REDIS_URL=${REDIS_URL:-redis://:redis2025@redis:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:redis2025@redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:redis2025@redis:6379/1}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin2025}
+      - MINIO_SECURE=${MINIO_SECURE:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nextproject-frontend
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    ports:
+      - "20100:80"     # 前端入口
+    depends_on:
+      main-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  prometheus_data:
+  grafana_data:

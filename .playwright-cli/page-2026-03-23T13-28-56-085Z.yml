@@ -1,0 +1,16 @@
+- generic [ref=e5]:
+  - generic [ref=e6]:
+    - heading "系统登录" [level=3] [ref=e7]
+    - paragraph [ref=e8]: 欢迎回来，请输入您的登录凭证
+  - generic [ref=e9]:
+    - generic [ref=e10]:
+      - generic [ref=e11]: 邮箱
+      - textbox "邮箱" [ref=e12]:
+        - /placeholder: m@example.com
+    - generic [ref=e13]:
+      - generic [ref=e14]: 密码
+      - textbox "密码" [ref=e15]
+  - generic [ref=e16]:
+    - button "登录" [ref=e17] [cursor=pointer]
+    - link "没有账号？去注册" [ref=e19] [cursor=pointer]:
+      - /url: /register
