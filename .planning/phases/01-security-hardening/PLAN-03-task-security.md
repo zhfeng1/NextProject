@@ -1,0 +1,333 @@
+# Plan 03: AI 任务安全执行机制
+
+```yaml
+wave: 2
+depends_on:
+  - PLAN-01-api-key-encryption
+files_modified:
+  - backend/services/task_service.py
+  - backend/tasks/develop_code.py
+  - backend/core/redis_lock.py
+autonomous: true
+requirements:
+  - SEC-02
+  - SEC-03
+  - SEC-01
+  - KEY-01
+  - KEY-02
+  - KEY-03
+  - KEY-04
+```
+
+## Goal
+
+改造 AI 任务执行流程：(1) API Key 通过临时文件传入子进程，不再出现在环境变量中；(2) 任务结束后清理临时文件；(3) Redis 分布式锁按 site_id 粒度防止同一仓库并发执行 AI 任务。
+
+<threat_model>
+
+### Assets
+- **A1**: 解密后的 API Key 明文（临时存在于内存和临时文件中）
+- **A2**: 仓库文件系统完整性（防止并发 AI 任务导致文件冲突）
+
+### Threats
+| ID | Threat | Severity | Mitigation |
+|----|--------|----------|------------|
+| T1 | API Key 出现在 `/proc/<pid>/environ` 中被其他进程读取 | **HIGH** | Codex: 改为写入临时文件 + 通过文件路径传递，环境变量只含路径。Claude Code: 见 Accepted Risks |
+| T2 | 临时文件中的 API Key 被其他用户读取 | MEDIUM | 文件权限 `0o600`，仅文件所有者可读 |
+| T3 | 任务异常退出后临时文件残留 | MEDIUM | `finally` 块 + `update_status` 终态清理 + 容器重启 `/tmp` 自动清理 |
+| T4 | 同一仓库两个 AI 任务并发执行导致文件冲突 | **HIGH** | Redis `SET NX EX` 分布式锁，按 `site_id` 粒度；锁获取失败时 Celery retry |
+| T5 | 锁持有者崩溃不释放锁导致死锁 | MEDIUM | 锁 TTL 2100s（任务超时 1800s + 300s 裕量），超时自动释放 |
+| T6 | 非锁持有者误释放锁 | LOW | Lua 脚本校验 `task_id` 一致后才允许 DEL |
+
+### Accepted Risks
+- 临时文件在磁盘上短暂存在明文 Key（与写入环境变量相比已大幅降低风险面，服务器 root 权限攻击属于基础设施层面）
+- **`claude_code` provider 仍将解密后的明文 Key 写入 `ANTHROPIC_API_KEY` 环境变量**：Claude CLI 不支持 `ANTHROPIC_API_KEY_FILE` 或其他文件读取方式，环境变量是其唯一的认证机制。该环境变量仅存在于 Celery worker 子进程的生命周期内，进程结束后即销毁。此风险与 SEC-02 的临时文件方案不完全一致，但属于外部工具限制，无法在应用层规避。
+
+</threat_model>
+
+## Tasks
+
+<task id="3.1">
+<title>创建 Redis 分布式锁工具模块</title>
+<read_first>
+- backend/core/celery_app.py
+- backend/core/config.py
+</read_first>
+<action>
+创建 `backend/core/redis_lock.py`：
+
+```python
+"""Redis-based distributed lock for site-level task concurrency control."""
+from __future__ import annotations
+
+import redis
+
+from backend.core.config import get_settings
+
+_LOCK_PREFIX = "nextproject:site-lock:"
+_DEFAULT_TTL = 2100  # task timeout (1800s) + 300s margin
+
+# Lua script: only the lock holder can release
+_RELEASE_SCRIPT = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('del', KEYS[1])
+else
+    return 0
+end
+"""
+
+
+def _get_redis() -> redis.Redis:
+    settings = get_settings()
+    return redis.Redis.from_url(settings.redis_url, decode_responses=True)
+
+
+def acquire_site_lock(site_id: str, task_id: str, ttl: int = _DEFAULT_TTL) -> bool:
+    """Try to acquire a lock for the given site. Returns True if acquired."""
+    r = _get_redis()
+    return bool(r.set(f"{_LOCK_PREFIX}{site_id}", task_id, nx=True, ex=ttl))
+
+
+def release_site_lock(site_id: str, task_id: str) -> bool:
+    """Release the lock only if held by the given task. Returns True if released."""
+    r = _get_redis()
+    result = r.eval(_RELEASE_SCRIPT, 1, f"{_LOCK_PREFIX}{site_id}", task_id)
+    return bool(result)
+
+
+__all__ = [
+    "acquire_site_lock",
+    "release_site_lock",
+]
+```
+</action>
+<acceptance_criteria>
+- `backend/core/redis_lock.py` exists
+- `backend/core/redis_lock.py` contains `import redis`
+- `backend/core/redis_lock.py` contains `_LOCK_PREFIX = "nextproject:site-lock:"`
+- `backend/core/redis_lock.py` contains `def acquire_site_lock(site_id: str, task_id: str`
+- `backend/core/redis_lock.py` contains `def release_site_lock(site_id: str, task_id: str`
+- `backend/core/redis_lock.py` contains `_RELEASE_SCRIPT`
+- `backend/core/redis_lock.py` contains `r.eval(_RELEASE_SCRIPT`
+- `backend/core/redis_lock.py` contains `nx=True, ex=ttl`
+</acceptance_criteria>
+</task>
+
+<task id="3.2">
+<title>改造 develop_code.py — 集成 Redis 锁 + retry</title>
+<read_first>
+- backend/tasks/develop_code.py
+- backend/tasks/_helpers.py
+- backend/core/redis_lock.py (task 3.1 创建的)
+</read_first>
+<action>
+将 `backend/tasks/develop_code.py` 完整替换为：
+
+```python
+from __future__ import annotations
+
+import asyncio
+
+from backend.core.celery_app import celery_app
+from backend.core.redis_lock import acquire_site_lock, release_site_lock
+from backend.models import Task
+from backend.services.task_service import task_service
+from backend.tasks._helpers import task_db_session
+
+
+@celery_app.task(bind=True, max_retries=60, default_retry_delay=30)
+def develop_code_task(self, task_id: str) -> dict[str, object]:
+    async def _run() -> dict[str, object]:
+        async with task_db_session() as db:
+            task = await db.get(Task, task_id)
+            if task is None:
+                raise ValueError(f"Task not found: {task_id}")
+            site_id = str(task.site_id)
+
+        # Acquire site-level lock outside the DB session
+        if not acquire_site_lock(site_id, task_id):
+            raise self.retry(countdown=30)
+
+        try:
+            async with task_db_session() as db:
+                result_task = await task_service.run_develop_task(db, task_id)
+                return task_service.serialize_task(result_task)
+        finally:
+            release_site_lock(site_id, task_id)
+
+    return asyncio.run(_run())
+```
+
+关键变更：
+- `max_retries` 从 3 改为 60（最多等待 30 分钟：60 * 30s）
+- `default_retry_delay` 保持 30s
+- 在执行前 `acquire_site_lock(site_id, task_id)`，失败则 `self.retry(countdown=30)`
+- `finally` 中 `release_site_lock(site_id, task_id)`
+- 使用普通 `from backend.models import Task` 导入（无循环导入问题：`develop_code.py` → `backend.models` 路径不经过 `develop_code.py` 自身）
+</action>
+<acceptance_criteria>
+- `backend/tasks/develop_code.py` contains `from backend.core.redis_lock import acquire_site_lock, release_site_lock`
+- `backend/tasks/develop_code.py` contains `from backend.models import Task`
+- `backend/tasks/develop_code.py` contains `max_retries=60, default_retry_delay=30`
+- `backend/tasks/develop_code.py` contains `acquire_site_lock(site_id, task_id)`
+- `backend/tasks/develop_code.py` contains `raise self.retry(countdown=30)`
+- `backend/tasks/develop_code.py` contains `release_site_lock(site_id, task_id)`
+- `backend/tasks/develop_code.py` contains `finally:`
+- `backend/tasks/develop_code.py` does NOT contain `__import__`
+</acceptance_criteria>
+</task>
+
+<task id="3.3">
+<title>改造 task_service.py — 临时文件传入 API Key + 清理</title>
+<read_first>
+- backend/services/task_service.py
+- backend/core/encryption.py
+</read_first>
+<action>
+修改 `backend/services/task_service.py`：
+
+1. 在文件头部 import 区域添加：
+```python
+import shutil
+import stat
+```
+（`shutil` 用于清理目录，`stat` 用于设置文件权限）
+
+同时添加加密模块导入：
+```python
+from backend.core.encryption import decrypt_api_key
+```
+
+2. 在 `TaskService` 类中，在 `_write_runtime_file` 方法（L89-93）之后，添加新方法：
+```python
+@staticmethod
+def _write_api_key_file(runtime_root: Path, api_key_plaintext: str) -> str:
+    """Write decrypted API key to a temp file with restricted permissions."""
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    key_path = runtime_root / "api_key"
+    key_path.write_text(api_key_plaintext, encoding="utf-8")
+    key_path.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0o600
+    return str(key_path)
+
+@staticmethod
+def _cleanup_task_runtime(task_id: str) -> None:
+    """Remove the runtime directory for a completed task."""
+    runtime_dir = Path("/tmp/nextproject-task-runtime") / str(task_id)
+    if runtime_dir.exists():
+        shutil.rmtree(runtime_dir, ignore_errors=True)
+    codex_home = Path(f"/tmp/nextproject-codex/{task_id}")
+    if codex_home.exists():
+        shutil.rmtree(codex_home, ignore_errors=True)
+```
+
+3. 在 `update_status` 方法（L216-242）中，在 L231-232 的终态判断块内（`if status_value in {TaskStatus.SUCCESS.value, TaskStatus.FAILED.value, TaskStatus.CANCELED.value}:`），在 `task.finished_at = now` 之后添加：
+```python
+            self._cleanup_task_runtime(str(task.id))
+```
+
+4. 在 `_run_develop_task_for_provider` 方法中，修改 L592-598 区域（`if llm_provider and llm_provider.api_key:` 块内）：
+
+将原来的直接赋值环境变量改为：先解密，再写临时文件，环境变量传文件路径。
+
+**替换 L592-618 为：**
+```python
+            if llm_provider and llm_provider.api_key:
+                decrypted_key = decrypt_api_key(llm_provider.api_key)
+                model_name = (llm_provider.models or [""])[0] if llm_provider.models else ""
+                api_key_file = self._write_api_key_file(runtime_context_root, decrypted_key)
+                if provider == "codex":
+                    extra_env["CODEX_TASK_API_KEY_FILE"] = api_key_file
+                    extra_env["CODEX_TASK_HOME"] = f"/tmp/nextproject-codex/{task.id}"
+                    if llm_provider.base_url:
+                        extra_env["CODEX_TASK_OPENAI_BASE_URL"] = llm_provider.base_url
+                    cmd_parts = [
+                        "sh",
+                        "-lc",
+                        (
+                            'set -e; '
+                            'export HOME="${CODEX_TASK_HOME}"; '
+                            'export CODEX_HOME="${CODEX_TASK_HOME}/.codex"; '
+                            'mkdir -p "$CODEX_HOME"; '
+                            'printf \'cli_auth_credentials_store = "file"\\n\' > "$CODEX_HOME/config.toml"; '
+                            'if [ -n "${CODEX_TASK_OPENAI_BASE_URL:-}" ]; then '
+                            'printf \'openai_base_url = "%s"\\n\' "$CODEX_TASK_OPENAI_BASE_URL" >> "$CODEX_HOME/config.toml"; '
+                            'fi; '
+                            'cat "${CODEX_TASK_API_KEY_FILE}" | codex login --with-api-key >/dev/null; '
+                            'exec codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox "$@"'
+                        ),
+                        "codex-task",
+                    ]
+                    if model_name:
+                        cmd_parts.extend(["--model", model_name])
+                    command = cmd_parts
+                elif provider == "claude_code":
+                    # Accepted Risk: Claude CLI only supports ANTHROPIC_API_KEY env var,
+                    # no file-based alternative exists. The env var is scoped to the
+                    # short-lived Celery worker subprocess and destroyed on completion.
+                    extra_env["ANTHROPIC_API_KEY"] = decrypted_key
+                    if llm_provider.base_url:
+                        extra_env["ANTHROPIC_BASE_URL"] = llm_provider.base_url
+                    cmd_parts = [os.getenv("CLAUDE_CMD", "claude")]
+                    if model_name:
+                        cmd_parts.extend(["--model", model_name])
+                    cmd_parts.append("-p")
+                    command = cmd_parts
+```
+
+关键变更点：
+- `llm_provider.api_key` → `decrypt_api_key(llm_provider.api_key)` 获取明文
+- Codex: `CODEX_TASK_API_KEY` 环境变量 → `CODEX_TASK_API_KEY_FILE` 文件路径
+- Codex shell 脚本: `printf %s "${CODEX_TASK_API_KEY}"` → `cat "${CODEX_TASK_API_KEY_FILE}"`
+- Claude Code: `llm_provider.api_key` → `decrypted_key`（Claude CLI 需要环境变量，见 Accepted Risks）
+- API Key 文件写入 `runtime_context_root/api_key`，权限 `0o600`
+</action>
+<acceptance_criteria>
+- `backend/services/task_service.py` contains `from backend.core.encryption import decrypt_api_key`
+- `backend/services/task_service.py` contains `def _write_api_key_file(runtime_root: Path, api_key_plaintext: str) -> str:`
+- `backend/services/task_service.py` contains `key_path.chmod(stat.S_IRUSR | stat.S_IWUSR)`
+- `backend/services/task_service.py` contains `def _cleanup_task_runtime(task_id: str) -> None:`
+- `backend/services/task_service.py` contains `shutil.rmtree(runtime_dir, ignore_errors=True)`
+- `backend/services/task_service.py` contains `decrypt_api_key(llm_provider.api_key)`
+- `backend/services/task_service.py` contains `CODEX_TASK_API_KEY_FILE`
+- `backend/services/task_service.py` contains `cat "${CODEX_TASK_API_KEY_FILE}"`
+- `backend/services/task_service.py` does NOT contain `extra_env["CODEX_TASK_API_KEY"] = llm_provider.api_key`
+- `backend/services/task_service.py` contains `self._cleanup_task_runtime(str(task.id))`
+- `backend/services/task_service.py` contains `# Accepted Risk: Claude CLI only supports ANTHROPIC_API_KEY env var`
+</acceptance_criteria>
+</task>
+
+## Verification
+
+```bash
+# 1. Redis 锁模块
+test -f backend/core/redis_lock.py && echo "PASS: redis_lock module exists"
+grep -q 'acquire_site_lock' backend/core/redis_lock.py && echo "PASS: acquire function"
+grep -q 'release_site_lock' backend/core/redis_lock.py && echo "PASS: release function"
+grep -q '_RELEASE_SCRIPT' backend/core/redis_lock.py && echo "PASS: Lua script"
+
+# 2. Celery 任务锁集成
+grep -q 'acquire_site_lock' backend/tasks/develop_code.py && echo "PASS: lock acquire in task"
+grep -q 'release_site_lock' backend/tasks/develop_code.py && echo "PASS: lock release in task"
+grep -q 'max_retries=60' backend/tasks/develop_code.py && echo "PASS: retry count"
+grep -q 'from backend.models import Task' backend/tasks/develop_code.py && echo "PASS: normal import"
+! grep -q '__import__' backend/tasks/develop_code.py && echo "PASS: no dynamic import"
+
+# 3. 临时文件机制
+grep -q 'CODEX_TASK_API_KEY_FILE' backend/services/task_service.py && echo "PASS: file-based key"
+grep -q '_write_api_key_file' backend/services/task_service.py && echo "PASS: key file writer"
+grep -q '_cleanup_task_runtime' backend/services/task_service.py && echo "PASS: cleanup function"
+grep -q 'decrypt_api_key' backend/services/task_service.py && echo "PASS: decrypt import"
+grep -q 'Accepted Risk: Claude CLI' backend/services/task_service.py && echo "PASS: claude_code accepted risk documented"
+
+# 4. 确认旧的不安全模式已移除
+! grep -q 'extra_env\["CODEX_TASK_API_KEY"\] = llm_provider.api_key' backend/services/task_service.py && echo "PASS: old env var removed"
+```
+
+## must_haves
+
+- [ ] AI 任务执行时 API Key 通过临时文件传入（Codex），不再出现在 `CODEX_TASK_API_KEY` 环境变量中
+- [ ] 临时文件权限为 `0o600`，仅文件所有者可读
+- [ ] 任务完成（成功/失败/取消）后 runtime 目录被清理
+- [ ] 同一 site 的 AI 任务通过 Redis 分布式锁串行执行，第二个任务 retry 等待
+- [ ] 锁释放使用 Lua 脚本校验持有者，防止误释放
+- [ ] `claude_code` provider 使用 `ANTHROPIC_API_KEY` 环境变量传递明文 Key 已记录为 Accepted Risk（Claude CLI 不支持文件方式读取 Key）
