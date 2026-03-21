@@ -103,13 +103,45 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| — | — | — |
+| KEY-01 | Phase 1 — 安全加固与基础设施加固 | Planned |
+| KEY-02 | Phase 1 — 安全加固与基础设施加固 | Planned |
+| KEY-03 | Phase 1 — 安全加固与基础设施加固 | Planned |
+| KEY-04 | Phase 1 — 安全加固与基础设施加固 | Planned |
+| SEC-01 | Phase 1 — 安全加固与基础设施加固 | Planned |
+| SEC-02 | Phase 1 — 安全加固与基础设施加固 | Planned |
+| SEC-03 | Phase 1 — 安全加固与基础设施加固 | Planned |
+| PROJ-01 | Phase 2 — 多仓库项目模型 | Planned |
+| PROJ-02 | Phase 2 — 多仓库项目模型 | Planned |
+| PROJ-03 | Phase 2 — 多仓库项目模型 | Planned |
+| PROJ-04 | Phase 2 — 多仓库项目模型 | Planned |
+| PROJ-05 | Phase 2 — 多仓库项目模型 | Planned |
+| CODE-01 | Phase 3 — AI 编码引擎 | Planned |
+| CODE-02 | Phase 3 — AI 编码引擎 | Planned |
+| CODE-03 | Phase 3 — AI 编码引擎 | Planned |
+| CODE-04 | Phase 3 — AI 编码引擎 | Planned |
+| CODE-05 | Phase 3 — AI 编码引擎 | Planned |
+| CODE-06 | Phase 3 — AI 编码引擎 | Planned |
+| CODE-07 | Phase 3 — AI 编码引擎 | Planned |
+| PROJ-06 | Phase 3 — AI 编码引擎 | Planned |
+| TEST-01 | Phase 4 — 半自动测试系统 | Planned |
+| TEST-02 | Phase 4 — 半自动测试系统 | Planned |
+| TEST-03 | Phase 4 — 半自动测试系统 | Planned |
+| TEST-04 | Phase 4 — 半自动测试系统 | Planned |
+| TEST-05 | Phase 4 — 半自动测试系统 | Planned |
+| DEPL-01 | Phase 5 — Docker 部署与预览 | Planned |
+| DEPL-02 | Phase 5 — Docker 部署与预览 | Planned |
+| DEPL-03 | Phase 5 — Docker 部署与预览 | Planned |
+| DEPL-04 | Phase 5 — Docker 部署与预览 | Planned |
+| AUTH-01 | Phase 6 — 用户认证完善与生产加固 | Planned |
+| AUTH-02 | Phase 6 — 用户认证完善与生产加固 | Planned |
+| AUTH-03 | Phase 6 — 用户认证完善与生产加固 | Planned |
+| AUTH-04 | Phase 6 — 用户认证完善与生产加固 | Planned |
 
 **Coverage:**
-- v1 requirements: 27 total
-- Mapped to phases: 0
-- Unmapped: 27
+- v1 requirements: 33 total (PROJ×6, AUTH×4, KEY×4, CODE×7, TEST×5, DEPL×4, SEC×3)
+- Mapped to phases: 33
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-23*
-*Last updated: 2026-04-23 after initial definition*
+*Last updated: 2026-04-23 after roadmap creation*
