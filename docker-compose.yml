@@ -75,6 +75,7 @@ services:
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin2025}
       - MINIO_SECURE=${MINIO_SECURE:-false}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - FERNET_KEY=${FERNET_KEY:?FERNET_KEY is required}
       - CODEX_MCP_BRIDGE_URL=http://codex-mcp:8090
       - LLM_DIALOG_LOG_ENABLED=${LLM_DIALOG_LOG_ENABLED:-false}
       - LLM_DIALOG_LOG_MAX_CHARS=${LLM_DIALOG_LOG_MAX_CHARS:-4000}
@@ -89,6 +90,7 @@ services:
       - CLAUDE_AUTH_CMD=${CLAUDE_AUTH_CMD:-claude login}
       - GEMINI_AUTH_CMD=${GEMINI_AUTH_CMD:-gemini auth login}
       - GENERATED_SITES_ROOT=/generated_sites
+      - TASK_ARTIFACTS_ROOT=/shared/task_artifacts
       - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-http://localhost:20100,http://127.0.0.1:20100}
       - CORS_ALLOW_CREDENTIALS=${CORS_ALLOW_CREDENTIALS:-true}
     depends_on:
@@ -139,7 +141,9 @@ services:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:redis2025@redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:redis2025@redis:6379/1}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - FERNET_KEY=${FERNET_KEY:?FERNET_KEY is required}
       - GENERATED_SITES_ROOT=/generated_sites
+      - TASK_ARTIFACTS_ROOT=/shared/task_artifacts
       - PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL:-http://127.0.0.1:8080}
       - CODEX_CMD=${CODEX_CMD:-codex exec}
       - CLAUDE_CMD=${CLAUDE_CMD:-claude}
@@ -234,6 +238,7 @@ services:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:redis2025@redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:redis2025@redis:6379/1}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - FERNET_KEY=${FERNET_KEY:-dGVzdC1mZXJuZXQta2V5LWZvci10ZXN0aW5nMTIzNDU=}
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin2025}
