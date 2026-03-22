@@ -107,6 +107,89 @@ async def delete_provider(
     return {"ok": True}
 
 
+@router.post("/verify-model")
+async def verify_model(
+    payload: dict[str, Any] = Body(default_factory=dict),
+    current_user: object = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    provider_id = (payload.get("provider_id") or "").strip()
+    model = (payload.get("model") or "").strip()
+    if not provider_id or not model:
+        raise HTTPException(status_code=400, detail="provider_id and model are required")
+
+    user_id = str(getattr(current_user, "id"))
+    p = await db.get(UserLLMProvider, provider_id)
+    if p is None or str(p.user_id) != user_id:
+        raise HTTPException(status_code=404, detail="Provider not found")
+
+    base_url = (p.base_url or "").strip().rstrip("/")
+
+    # SSRF mitigation: only allow http(s) schemes
+    if base_url and not base_url.startswith(("https://", "http://")):
+        raise HTTPException(status_code=400, detail="base_url must use http or https protocol")
+
+    api_key = decrypt_api_key(p.api_key) if p.api_key else ""
+    fmt = p.format or "responses"
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            if fmt == "messages":
+                # Claude API
+                resp = await client.post(
+                    f"{base_url}/messages",
+                    headers={
+                        "x-api-key": api_key,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": "hi"}],
+                        "max_tokens": 5,
+                    },
+                )
+            elif fmt == "responses":
+                # OpenAI Responses API
+                resp = await client.post(
+                    f"{base_url}/responses",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "input": "hi",
+                        "max_output_tokens": 5,
+                    },
+                )
+            else:
+                # OpenAI Chat Completions API (fallback)
+                resp = await client.post(
+                    f"{base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": "hi"}],
+                        "max_tokens": 5,
+                    },
+                )
+            resp.raise_for_status()
+            return {"ok": True, "message": f"模型 {model} 连通正常"}
+    except httpx.HTTPStatusError as exc:
+        detail = ""
+        try:
+            detail = exc.response.json().get("error", {}).get("message", str(exc))
+        except Exception:
+            detail = exc.response.text[:200]
+        return {"ok": False, "error": f"{exc.response.status_code}: {detail}"}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 @router.post("/fetch-models")
 async def fetch_models(
     payload: dict[str, Any] = Body(default_factory=dict),
