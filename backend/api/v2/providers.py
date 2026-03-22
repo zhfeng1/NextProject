@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_db
+from backend.core.encryption import decrypt_api_key, encrypt_api_key, is_masked, mask_api_key
 from backend.models.user_llm_provider import UserLLMProvider
 
 router = APIRouter(prefix="/providers")
@@ -20,7 +21,7 @@ def _serialize(p: UserLLMProvider) -> dict[str, Any]:
         "user_id": str(p.user_id),
         "name": p.name,
         "base_url": p.base_url,
-        "api_key": p.api_key,
+        "api_key": mask_api_key(decrypt_api_key(p.api_key)) if p.api_key else "",
         "models": p.models or [],
         "format": p.format,
         "is_default": bool(p.is_default),
@@ -53,7 +54,7 @@ async def create_provider(
         user_id=user_id,
         name=(payload.get("name") or "").strip() or "New Provider",
         base_url=(payload.get("base_url") or "").strip(),
-        api_key=(payload.get("api_key") or "").strip(),
+        api_key=encrypt_api_key((payload.get("api_key") or "").strip()),
         models=payload.get("models") or [],
         format=payload.get("format") or "responses",
         is_default=bool(payload.get("is_default", False)),
@@ -77,7 +78,14 @@ async def update_provider(
         raise HTTPException(status_code=404, detail="Provider not found")
     allowed = {"name", "base_url", "api_key", "models", "format", "is_default"}
     for key, value in payload.items():
-        if key in allowed:
+        if key not in allowed:
+            continue
+        if key == "api_key":
+            raw_key = (value or "").strip()
+            if not raw_key or is_masked(raw_key):
+                continue  # skip masked or empty api_key — user didn't change it
+            setattr(p, key, encrypt_api_key(raw_key))
+        else:
             setattr(p, key, value)
     await db.commit()
     await db.refresh(p)
