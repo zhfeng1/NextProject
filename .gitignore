@@ -4,3 +4,6 @@ __pycache__/
 .DS_Store
 data/
 generated_site/
+generated_sites/
+.codex/
+main_service/node_modules/

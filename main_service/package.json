@@ -1,0 +1,10 @@
+{
+  "name": "main-service-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Task runtime helpers for CLI agents and Playwright smoke tests",
+  "type": "module",
+  "dependencies": {
+    "playwright": "^1.55.0"
+  }
+}

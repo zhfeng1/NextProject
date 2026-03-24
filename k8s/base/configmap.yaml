@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nextproject-config
+data:
+  DATABASE_URL: postgresql+asyncpg://admin:nextproject2025@postgres:5432/nextproject
+  REDIS_URL: redis://:redis2025@redis:6379/0
+  CELERY_BROKER_URL: redis://:redis2025@redis:6379/0
+  CELERY_RESULT_BACKEND: redis://:redis2025@redis:6379/1
+  MINIO_ENDPOINT: minio:9000
+  MINIO_ACCESS_KEY: minioadmin
+  MINIO_SECRET_KEY: minioadmin2025
+  MINIO_SECURE: "false"
+  CORS_ALLOW_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:18080,http://127.0.0.1:18080
