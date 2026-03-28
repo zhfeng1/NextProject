@@ -86,3 +86,46 @@ All 18 acceptance criteria checks passed.
 - `backend/api/v2/providers.py` — new verify-model endpoint (83 lines added)
 - `frontend/src/api/providers.ts` — verifyModel API method
 - `frontend/src/views/Settings/Account.vue` — verifying state, verifyModel function, verify button UI
+
+---
+
+# Plan 01-03 Summary: AI 任务安全执行机制
+
+## Status: COMPLETED
+
+## Tasks Completed
+
+### Task 3.1: 创建 Redis 分布式锁工具模块
+- Created `backend/core/redis_lock.py` with:
+  - `acquire_site_lock(site_id, task_id, ttl)` — Redis `SET NX EX` lock acquisition
+  - `release_site_lock(site_id, task_id)` — Lua script owner-verified release
+  - `_LOCK_PREFIX = "nextproject:site-lock:"`, `_DEFAULT_TTL = 2100`
+- **Commit:** `3d59ec0`
+
+### Task 3.2: 改造 develop_code.py — 集成 Redis 锁 + retry
+- `max_retries` changed from 3 to 60, `default_retry_delay` set to 30s
+- Acquires site-level lock via `acquire_site_lock(site_id, task_id)` before execution
+- Lock failure triggers `self.retry(countdown=30)` for queue-based waiting
+- Lock released in `finally` block via `release_site_lock(site_id, task_id)`
+- Direct `from backend.models import Task` import (no `__import__` dynamic import)
+- **Commit:** `01faa95`
+
+### Task 3.3: 改造 task_service.py — 临时文件传入 API Key + 清理
+- Added `import shutil`, `import stat`, `from backend.core.encryption import decrypt_api_key`
+- `_write_api_key_file()` — writes decrypted key to `runtime_root/api_key` with `0o600` permissions
+- `_cleanup_task_runtime()` — removes runtime dir and codex home on task completion
+- Cleanup called in `update_status()` for terminal states (SUCCESS/FAILED/CANCELED)
+- Codex: `CODEX_TASK_API_KEY` env var replaced with `CODEX_TASK_API_KEY_FILE` file path; shell uses `cat "${CODEX_TASK_API_KEY_FILE}"`
+- Claude Code: uses `decrypted_key` via `ANTHROPIC_API_KEY` env var (documented as Accepted Risk — CLI has no file-based auth)
+- **Commit:** `327fabb`
+
+## Verification
+All 15 acceptance criteria checks passed:
+- Redis lock module: exists, acquire/release functions, Lua script
+- Celery task: lock integration, retry count 60, normal import, no dynamic import
+- Task service: file-based key, key file writer, cleanup function, decrypt import, accepted risk documented, old env var removed
+
+## Files Modified
+- `backend/core/redis_lock.py` — new file, Redis distributed lock
+- `backend/tasks/develop_code.py` — Redis lock + retry integration
+- `backend/services/task_service.py` — temp file API key, cleanup, decrypt
