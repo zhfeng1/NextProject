@@ -49,3 +49,40 @@ All 15 acceptance criteria checks passed.
 - `.env.example` — FERNET_KEY placeholder + instructions
 - `docker-compose.yml` — FERNET_KEY environment injection (3 services)
 - `frontend/src/views/Settings/Account.vue` — placeholder text update
+
+---
+
+# Plan 01-02 Summary: API Key 连通性验证端点
+
+## Status: COMPLETED
+
+## Tasks Completed
+
+### Task 2.1: 新增 verify-model 后端端点
+- Added `POST /providers/verify-model` endpoint to `backend/api/v2/providers.py`
+- Supports three API formats: Messages (Claude), Responses (OpenAI), Chat Completions (fallback)
+- Key decrypted server-side via `decrypt_api_key()` — never sent from frontend
+- SSRF mitigation: rejects `base_url` with non-http(s) schemes
+- Lightweight request: `max_tokens=5` with "hi" input
+- **Commit:** `dd12033`
+
+### Task 2.2: 前端添加 verifyModel API 方法
+- Added `verifyModel()` method to `providersAPI` object in `frontend/src/api/providers.ts`
+- Accepts `{ provider_id, model }` and returns `{ ok, message?, error? }`
+- **Commit:** `467a10e`
+
+### Task 2.3: 前端在已选模型旁添加验证按钮
+- Added `verifying: string` field to `ProviderUI` interface
+- Added `verifyModel()` async function for triggering verification
+- Added "验证" button next to each selected model in the template
+- Button shows "..." while verifying, disabled during request
+- Success/failure message displayed in provider card footer
+- **Commit:** `631d02e`
+
+## Verification
+All 18 acceptance criteria checks passed.
+
+## Files Modified
+- `backend/api/v2/providers.py` — new verify-model endpoint (83 lines added)
+- `frontend/src/api/providers.ts` — verifyModel API method
+- `frontend/src/views/Settings/Account.vue` — verifying state, verifyModel function, verify button UI
