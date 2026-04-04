@@ -2,23 +2,23 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 2
-current_plan: Not started
-status: planning
-last_updated: "2026-04-23T05:51:51.552Z"
+current_phase: 02
+current_plan: 2
+status: executing
+last_updated: "2026-04-23T08:00:00.000Z"
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 3
-  completed_plans: 0
-  percent: 0
+  total_plans: 7
+  completed_plans: 1
+  percent: 14
 ---
 
 # Project State: NextProject v1
 
-**Current Phase:** 2
-**Current Plan:** Not started
-**Status:** Ready to plan
+**Current Phase:** 02
+**Current Plan:** 2
+**Status:** Executing Phase 02
 
 ---
 
@@ -27,7 +27,7 @@ progress:
 | Phase | Name | Status | Plans | Completed |
 |-------|------|--------|-------|-----------|
 | 1 | 安全加固与基础设施加固 | NOT_STARTED | 3 | 0 |
-| 2 | 多仓库项目模型 | NOT_STARTED | 4 | 0 |
+| 2 | 多仓库项目模型 | IN_PROGRESS | 4 | 1 |
 | 3 | AI 编码引擎 | NOT_STARTED | 5 | 0 |
 | 4 | 半自动测试系统 | NOT_STARTED | 4 | 0 |
 | 5 | Docker 部署与预览 | NOT_STARTED | 3 | 0 |
@@ -39,6 +39,7 @@ progress:
 - JWT 认证基础已存在，但注册/登录/用户管理需完善
 - API Key 存储存在明文安全风险，需优先修复
 - Site 管理已有，需扩展为 Project 多仓库模型
+- **Plan 02-01 已完成**: Project 数据模型 + Site.project_id FK + Alembic 迁移 + 文件系统迁移
 
 ## Blockers
 
@@ -51,8 +52,12 @@ None
 | 安全加固优先于功能开发 | 2026-04-23 | API Key 明文存储是平台级风险 |
 | Phase 1/2 可并行，3 依赖 1+2 | 2026-04-23 | 研究建议的构建顺序 |
 | v1 不含 Skill 部署，推迟到 v2 | 2026-04-23 | 聚焦 Docker 本地部署预览 |
+| 使用 mixins.py 的 UUIDPrimaryKeyMixin | 2026-04-23 | Plan 02-01: 与 Site 模型 String(36) PK 保持一致 |
+| project_id 设为 nullable | 2026-04-23 | Plan 02-01: 保持向后兼容 |
+| 迁移用 copy-verify-delete 策略 | 2026-04-23 | Plan 02-01: 文件系统迁移安全策略 |
 
 ---
 *Last updated: 2026-04-23*
 
-**Planned Phase:** 01 (security-hardening) — 3 plans — 2026-04-23T05:04:38.561Z
+**Completed Plan:** 02-01 (Project + ProjectRepo 数据模型与 Alembic 迁移) — 2026-04-23
+**Next Plan:** 02-02
