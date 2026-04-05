@@ -28,7 +28,7 @@ from backend.services.websocket_service import websocket_manager
 from backend.services.workflow_service import WORKFLOW_STAGE_LABELS
 
 SUPPORTED_PROVIDERS = {"codex", "claude_code", "gemini_cli"}
-SUPPORTED_TASK_TYPES = {"develop_code", "test_local_playwright", "deploy_local", "deploy_apollo"}
+SUPPORTED_TASK_TYPES = {"develop_code", "test_local_playwright", "deploy_local", "deploy_apollo", "clone_repo"}
 TASK_WORKFLOW_STAGE_RULES = {
     "develop_code": {"execute", "optimize"},
     "test_local_playwright": {"execute", "optimize", "review"},
@@ -326,6 +326,10 @@ class TaskService:
                 from backend.tasks.test import smoke_test_task
 
                 smoke_test_task.delay(str(task.id))
+            elif task.task_type == "clone_repo":
+                from backend.tasks.clone_repo import clone_repo_task
+
+                clone_repo_task.delay(str(task.id))
         except Exception:
             return
 
