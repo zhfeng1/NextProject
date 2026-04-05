@@ -177,12 +177,13 @@ class SiteService:
         git_username: str | None = None,
         git_password: str | None = None,
         git_branch: str | None = None,
+        override_root: Path | None = None,
     ) -> Path:
         git_bin = shutil.which("git")
         if not git_bin:
             raise RuntimeError("git is required in the runtime image to clone site repositories")
 
-        root = self.site_root(site_id)
+        root = override_root if override_root is not None else self.site_root(site_id)
         if root.exists():
             shutil.rmtree(root, ignore_errors=True)
         root.parent.mkdir(parents=True, exist_ok=True)
