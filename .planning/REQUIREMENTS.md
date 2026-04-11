@@ -9,11 +9,11 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### 项目管理 (PROJ)
 
-- [ ] **PROJ-01**: 用户可创建项目并为项目命名和描述
-- [ ] **PROJ-02**: 用户可在项目下关联多个 git 仓库（前端、后端、微服务等）
-- [ ] **PROJ-03**: 用户可从零创建空白站点，平台自动初始化 git 仓库
-- [ ] **PROJ-04**: 用户可通过 git URL 导入已有仓库代码
-- [ ] **PROJ-05**: 用户可浏览项目下所有仓库的文件结构
+- [x] **PROJ-01**: 用户可创建项目并为项目命名和描述
+- [x] **PROJ-02**: 用户可在项目下关联多个 git 仓库（前端、后端、微服务等）
+- [x] **PROJ-03**: 用户可从零创建空白站点，平台自动初始化 git 仓库
+- [x] **PROJ-04**: 用户可通过 git URL 导入已有仓库代码
+- [x] **PROJ-05**: 用户可浏览项目下所有仓库的文件结构
 - [ ] **PROJ-06**: AI 能感知项目下多个仓库的结构和服务边界，跨仓库理解上下文
 
 ### 用户认证 (AUTH)
@@ -110,11 +110,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SEC-01 | Phase 1 — 安全加固与基础设施加固 | Planned |
 | SEC-02 | Phase 1 — 安全加固与基础设施加固 | Planned |
 | SEC-03 | Phase 1 — 安全加固与基础设施加固 | Planned |
-| PROJ-01 | Phase 2 — 多仓库项目模型 | Planned |
-| PROJ-02 | Phase 2 — 多仓库项目模型 | Planned |
-| PROJ-03 | Phase 2 — 多仓库项目模型 | Planned |
-| PROJ-04 | Phase 2 — 多仓库项目模型 | Planned |
-| PROJ-05 | Phase 2 — 多仓库项目模型 | Planned |
+| PROJ-01 | Phase 2 — 多仓库项目模型 | Done (02-02) |
+| PROJ-02 | Phase 2 — 多仓库项目模型 | Done (02-02) |
+| PROJ-03 | Phase 2 — 多仓库项目模型 | Done (02-02) |
+| PROJ-04 | Phase 2 — 多仓库项目模型 | Done (02-02) |
+| PROJ-05 | Phase 2 — 多仓库项目模型 | Done (02-02) |
 | CODE-01 | Phase 3 — AI 编码引擎 | Planned |
 | CODE-02 | Phase 3 — AI 编码引擎 | Planned |
 | CODE-03 | Phase 3 — AI 编码引擎 | Planned |

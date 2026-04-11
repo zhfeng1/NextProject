@@ -3,21 +3,21 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 02
-current_plan: 2
+current_plan: 3
 status: executing
-last_updated: "2026-04-23T08:00:00.000Z"
+last_updated: "2026-04-23T07:21:40.000Z"
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 7
-  completed_plans: 1
-  percent: 14
+  completed_plans: 2
+  percent: 28
 ---
 
 # Project State: NextProject v1
 
 **Current Phase:** 02
-**Current Plan:** 2
+**Current Plan:** 3
 **Status:** Executing Phase 02
 
 ---
@@ -27,7 +27,7 @@ progress:
 | Phase | Name | Status | Plans | Completed |
 |-------|------|--------|-------|-----------|
 | 1 | 安全加固与基础设施加固 | NOT_STARTED | 3 | 0 |
-| 2 | 多仓库项目模型 | IN_PROGRESS | 4 | 1 |
+| 2 | 多仓库项目模型 | IN_PROGRESS | 4 | 2 |
 | 3 | AI 编码引擎 | NOT_STARTED | 5 | 0 |
 | 4 | 半自动测试系统 | NOT_STARTED | 4 | 0 |
 | 5 | Docker 部署与预览 | NOT_STARTED | 3 | 0 |
@@ -39,7 +39,8 @@ progress:
 - JWT 认证基础已存在，但注册/登录/用户管理需完善
 - API Key 存储存在明文安全风险，需优先修复
 - Site 管理已有，需扩展为 Project 多仓库模型
-- **Plan 02-01 已完成**: Project 数据模型 + Site.project_id FK + Alembic 迁移 + 文件系统迁移
+- **Plan 02-01 已完成**: Project 数据模型 + Site.project_id FK + Alembic 迁移
+- **Plan 02-02 已完成**: ProjectService CRUD + REST API + clone_repo Celery 任务 + 文件浏览 override_root
 
 ## Blockers
 
@@ -55,9 +56,11 @@ None
 | 使用 mixins.py 的 UUIDPrimaryKeyMixin | 2026-04-23 | Plan 02-01: 与 Site 模型 String(36) PK 保持一致 |
 | project_id 设为 nullable | 2026-04-23 | Plan 02-01: 保持向后兼容 |
 | 迁移用 copy-verify-delete 策略 | 2026-04-23 | Plan 02-01: 文件系统迁移安全策略 |
+| 使用 encrypt_api_key 而非 encrypt_value | 2026-04-23 | Plan 02-02: 匹配现有加密 API |
+| resolve_site_path 返回 (root, target) 元组 | 2026-04-23 | Plan 02-02: 支持 override_root 同时保持路径穿越检查 |
 
 ---
 *Last updated: 2026-04-23*
 
-**Completed Plan:** 02-01 (Project + ProjectRepo 数据模型与 Alembic 迁移) — 2026-04-23
-**Next Plan:** 02-02
+**Completed Plan:** 02-02 (ProjectService + API + Celery 异步克隆) — 2026-04-23
+**Next Plan:** 02-03

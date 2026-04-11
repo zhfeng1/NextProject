@@ -33,7 +33,7 @@
 
 **Plans:**
 1. ~~Project + ProjectRepo 数据模型与迁移~~ — ✅ DONE — 新建表、Site 添加可空 project_id FK、Alembic 迁移 (PROJ-01, PROJ-02)
-2. 仓库创建与导入 — 空白站点初始化 git + 从 URL 克隆已有仓库 (PROJ-03, PROJ-04)
+2. ~~仓库创建与导入~~ — ✅ DONE — ProjectService CRUD + REST API + clone_repo Celery 任务 + 文件浏览 override_root (PROJ-03, PROJ-04, PROJ-05)
 3. 项目管理前端 — 项目列表、创建/编辑、仓库管理、文件浏览器 (PROJ-01, PROJ-02, PROJ-05)
 4. 文件浏览与 Monaco 集成 — 项目下多仓库文件树切换、Monaco 打开编辑文件 (PROJ-05)
 
@@ -187,4 +187,4 @@ Phase 6 (认证加固) ◄─── 可在任何阶段并行 ──────�
 
 ---
 *Roadmap created: 2026-04-23*
-*Last updated: 2026-04-23 — Plan 02-01 completed*
+*Last updated: 2026-04-23 — Plan 02-02 completed*
