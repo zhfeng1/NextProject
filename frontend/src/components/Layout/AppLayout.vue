@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/sidebar'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { Home, Globe, LayoutTemplate, ListTodo, Settings2, UserCog, LogOut } from 'lucide-vue-next'
+import { Home, Globe, LayoutTemplate, ListTodo, Settings2, UserCog, LogOut, PlugZap, Sparkles, GitBranchPlus, FolderKanban } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -65,14 +65,14 @@ onMounted(async () => {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel>站点管理</SidebarGroupLabel>
+          <SidebarGroupLabel>项目管理</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton as-child :isActive="route.path === '/sites'">
-                  <router-link to="/sites">
-                    <Globe class="w-4 h-4 mr-2" />
-                    <span>我的站点</span>
+                <SidebarMenuButton as-child :isActive="route.path === '/projects' || route.path.startsWith('/projects/')">
+                  <router-link to="/projects">
+                    <FolderKanban class="w-4 h-4 mr-2" />
+                    <span>我的项目</span>
                   </router-link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -89,6 +89,38 @@ onMounted(async () => {
                   <router-link to="/tasks">
                     <ListTodo class="w-4 h-4 mr-2" />
                     <span>任务列表</span>
+                  </router-link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>AI 中心</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton as-child :isActive="route.path === '/mcp'">
+                  <router-link to="/mcp">
+                    <PlugZap class="w-4 h-4 mr-2" />
+                    <span>MCP 中心</span>
+                  </router-link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton as-child :isActive="route.path === '/skills'">
+                  <router-link to="/skills">
+                    <Sparkles class="w-4 h-4 mr-2" />
+                    <span>Skill 中心</span>
+                  </router-link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton as-child :isActive="route.path === '/workflows'">
+                  <router-link to="/workflows">
+                    <GitBranchPlus class="w-4 h-4 mr-2" />
+                    <span>工作流中心</span>
                   </router-link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
