@@ -3,6 +3,11 @@ import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
+const normalizeSiteId = (value: unknown) => {
+  const siteId = String(value ?? '').trim()
+  return siteId || undefined
+}
+
 const routes: RouteRecordRaw[] = [
   {
     path: '/login',
@@ -17,6 +22,15 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: false },
   },
   {
+    path: '/site-editor/:id',
+    redirect: (to) => {
+      const id = normalizeSiteId(to.params.id)
+      return id
+        ? { name: 'SiteEditor', params: { id }, query: to.query, hash: to.hash }
+        : { name: 'SiteList' }
+    },
+  },
+  {
     path: '/',
     component: () => import('@/components/Layout/AppLayout.vue'),
     meta: { requiresAuth: true },
@@ -27,9 +41,18 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Dashboard/Index.vue'),
       },
       {
+        path: 'projects',
+        name: 'ProjectList',
+        component: () => import('@/views/Projects/ProjectList.vue'),
+      },
+      {
+        path: 'projects/:id',
+        name: 'ProjectDetail',
+        component: () => import('@/views/Projects/ProjectDetail.vue'),
+      },
+      {
         path: 'sites',
-        name: 'SiteList',
-        component: () => import('@/views/Sites/SiteList.vue'),
+        redirect: '/projects',
       },
       {
         path: 'sites/:id',
@@ -50,6 +73,21 @@ const routes: RouteRecordRaw[] = [
         path: 'tasks',
         name: 'TaskList',
         component: () => import('@/views/Tasks/TaskList.vue'),
+      },
+      {
+        path: 'mcp',
+        name: 'McpCenter',
+        component: () => import('@/views/Centers/McpCenter.vue'),
+      },
+      {
+        path: 'skills',
+        name: 'SkillCenter',
+        component: () => import('@/views/Centers/SkillCenter.vue'),
+      },
+      {
+        path: 'workflows',
+        name: 'WorkflowCenter',
+        component: () => import('@/views/Centers/WorkflowCenter.vue'),
       },
       {
         path: 'settings',
