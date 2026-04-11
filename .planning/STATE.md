@@ -3,21 +3,21 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 02
-current_plan: 3
+current_plan: 4
 status: executing
-last_updated: "2026-04-23T07:21:40.000Z"
+last_updated: "2026-04-23T07:33:00.000Z"
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 7
-  completed_plans: 2
-  percent: 28
+  completed_plans: 3
+  percent: 42
 ---
 
 # Project State: NextProject v1
 
 **Current Phase:** 02
-**Current Plan:** 3
+**Current Plan:** 4
 **Status:** Executing Phase 02
 
 ---
@@ -27,7 +27,7 @@ progress:
 | Phase | Name | Status | Plans | Completed |
 |-------|------|--------|-------|-----------|
 | 1 | 安全加固与基础设施加固 | NOT_STARTED | 3 | 0 |
-| 2 | 多仓库项目模型 | IN_PROGRESS | 4 | 2 |
+| 2 | 多仓库项目模型 | IN_PROGRESS | 4 | 3 |
 | 3 | AI 编码引擎 | NOT_STARTED | 5 | 0 |
 | 4 | 半自动测试系统 | NOT_STARTED | 4 | 0 |
 | 5 | Docker 部署与预览 | NOT_STARTED | 3 | 0 |
@@ -41,6 +41,8 @@ progress:
 - Site 管理已有，需扩展为 Project 多仓库模型
 - **Plan 02-01 已完成**: Project 数据模型 + Site.project_id FK + Alembic 迁移
 - **Plan 02-02 已完成**: ProjectService CRUD + REST API + clone_repo Celery 任务 + 文件浏览 override_root
+
+- **Plan 02-03 已完成**: 前端项目管理页面（TypeScript 类型、API 客户端、Pinia store、ProjectList/ProjectDetail、路由、侧边栏）
 
 ## Blockers
 
@@ -59,8 +61,10 @@ None
 | 使用 encrypt_api_key 而非 encrypt_value | 2026-04-23 | Plan 02-02: 匹配现有加密 API |
 | resolve_site_path 返回 (root, target) 元组 | 2026-04-23 | Plan 02-02: 支持 override_root 同时保持路径穿越检查 |
 
+| ProjectEditor 路由延迟到 Plan 04 | 2026-04-23 | Plan 02-03: 避免引用不存在的组件导致构建失败 |
+
 ---
 *Last updated: 2026-04-23*
 
-**Completed Plan:** 02-02 (ProjectService + API + Celery 异步克隆) — 2026-04-23
-**Next Plan:** 02-03
+**Completed Plan:** 02-03 (项目管理前端 — 列表、创建、路由、导航) — 2026-04-23
+**Next Plan:** 02-04
