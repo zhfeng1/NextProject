@@ -88,7 +88,12 @@ async function fetchModels(p: ProviderUI) {
   p.fetching = true
   p.msg = ''
   try {
-    const res = await providersAPI.fetchModels({ base_url: p.base_url, provider_id: p.id })
+    const params: any = { base_url: p.base_url, provider_id: p.id }
+    // Send raw api_key as fallback if it's not masked (user typed it but hasn't saved yet)
+    if (p.api_key && !p.api_key.includes('****')) {
+      params.api_key = p.api_key
+    }
+    const res = await providersAPI.fetchModels(params)
     if (res.ok && res.models?.length) {
       p.availableModels = res.models
       p.msg = `获取到 ${res.models.length} 个模型`
@@ -292,7 +297,7 @@ async function savePassword() {
             <Badge :variant="p.format === 'responses' ? 'default' : 'outline'" class="text-[10px]">
               {{ p.format === 'responses' ? 'Codex (Responses)' : 'Claude (Messages)' }}
             </Badge>
-            <Button size="sm" variant="ghost" class="h-7 px-2 text-xs text-destructive" @click="removeProvider(p)">删除</Button>
+            <Button size="sm" variant="destructive" class="h-7 px-2 text-xs" @click="removeProvider(p)">删除</Button>
           </div>
         </div>
       </CardHeader>
@@ -368,9 +373,18 @@ async function savePassword() {
           </div>
         </div>
       </CardContent>
-      <CardFooter class="flex items-center gap-3">
+      <!-- 操作反馈消息 -->
+      <div v-if="p.msg" class="px-6 pb-2">
+        <div class="text-sm px-3 py-2 rounded-md"
+          :class="p.msg.includes('已保存') || p.msg.includes('获取到') || p.msg.includes('连通正常')
+            ? 'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-400'
+            : p.msg.includes('失败') || p.msg.includes('error') || p.msg.includes('401') || p.msg.includes('Error')
+              ? 'bg-destructive/10 text-destructive'
+              : 'bg-muted text-muted-foreground'"
+        >{{ p.msg }}</div>
+      </div>
+      <CardFooter>
         <Button @click="saveProvider(p)" :disabled="p.saving">{{ p.saving ? '保存中...' : '保存' }}</Button>
-        <span v-if="p.msg" class="text-sm" :class="p.msg.includes('已保存') || p.msg.includes('获取到') || p.msg.includes('连通正常') ? 'text-green-600' : 'text-muted-foreground'">{{ p.msg }}</span>
       </CardFooter>
     </Card>
   </div>
