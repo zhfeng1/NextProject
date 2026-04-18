@@ -296,6 +296,8 @@ class TaskService:
                     detail=f"Task type {normalized_task_type} is not allowed in workflow stage {workflow_stage}",
                 )
             payload_data["workflow_stage"] = workflow_stage
+        # Security: strip user-supplied 'command' to prevent arbitrary command execution
+        payload_data.pop("command", None)
         task = Task(
             id=str(uuid.uuid4()),
             site_id=site.id,
@@ -509,7 +511,7 @@ class TaskService:
             raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
         payload = getattr(task, "payload_json", None) or {}
         provider = task.provider
-        command_text = (payload.get("command") or "").strip()
+        command_text = ""  # user-supplied command execution is disabled for security
         base_prompt = (payload.get("prompt") or payload.get("instruction") or "").strip()
         site = await db.get(Site, task.site_id)
         if site is None:
