@@ -85,8 +85,8 @@ class Settings(BaseSettings):
     )
     default_org_slug: str = "default-org"
     default_org_name: str = "Default Organization"
-    default_admin_email: str = "admin@example.com"
-    default_admin_password: str = "admin123456"
+    default_admin_email: str = Field(default="admin@example.com", alias="DEFAULT_ADMIN_EMAIL")
+    default_admin_password: str = Field(default="admin123456", alias="DEFAULT_ADMIN_PASSWORD")
     default_site_tech_stack_backend: Literal["fastapi"] = "fastapi"
     default_site_tech_stack_frontend: Literal["vue3"] = "vue3"
 
@@ -114,6 +114,22 @@ class Settings(BaseSettings):
             )
         if len(value) != 44:
             raise ValueError("FERNET_KEY must be a valid Fernet key (44 characters, base64 encoded)")
+        return value
+
+    @field_validator("default_admin_password")
+    @classmethod
+    def validate_default_admin_password(cls, value: str, info) -> str:
+        value = value.strip()
+        insecure_defaults = {"admin123456", "admin", "password", "123456"}
+        if value in insecure_defaults:
+            import warnings
+            warnings.warn(
+                "DEFAULT_ADMIN_PASSWORD is set to a well-known insecure default. "
+                "Change it via the DEFAULT_ADMIN_PASSWORD environment variable before deploying to production.",
+                stacklevel=2,
+            )
+        if len(value) < 8:
+            raise ValueError("DEFAULT_ADMIN_PASSWORD must be at least 8 characters long")
         return value
 
     @staticmethod
