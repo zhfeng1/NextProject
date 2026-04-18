@@ -65,7 +65,22 @@ async function handleOpenFile(payload: { path: string; repoId: string; repoName:
   }
 
   // 获取文件内容
-  const res = await projectsAPI.getRepoFile(projectId, payload.repoId, payload.path)
+  let res: any
+  try {
+    res = await projectsAPI.getRepoFile(projectId, payload.repoId, payload.path)
+  } catch {
+    const { toast } = await import('vue-sonner')
+    toast.error('无法打开文件')
+    return
+  }
+
+  // 二进制文件检测 (R-21)
+  if (res.binary) {
+    const { toast } = await import('vue-sonner')
+    toast.warning('该文件为二进制文件，无法预览')
+    return
+  }
+
   const filename = payload.path.split('/').pop() || payload.path
 
   const tab: EditorTab = {
