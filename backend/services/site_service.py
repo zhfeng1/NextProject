@@ -409,6 +409,7 @@ class SiteService:
             "template_id": str(site.template_id) if getattr(site, "template_id", None) else None,
             "preview_url": self.preview_url_for_site(site.site_id),
             "internal_url": f"http://127.0.0.1:{site.port}" if getattr(site, "port", None) else None,
+            "project_id": str(site.project_id) if getattr(site, "project_id", None) else None,
             "config": getattr(site, "config", {}) or {},
             "created_at": getattr(site, "created_at", None).isoformat() if getattr(site, "created_at", None) else None,
         }
