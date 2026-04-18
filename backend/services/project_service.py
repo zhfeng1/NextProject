@@ -157,6 +157,11 @@ class ProjectService:
         # [ISSUE-04 fix] validate repo name
         repo_name = validate_repo_name(repo_name)
 
+        # T-04: 同一项目下仓库名唯一性检查
+        existing_repos = await self.get_project_repos(db, project_id)
+        if any(r.name == repo_name for r in existing_repos):
+            raise HTTPException(status_code=409, detail=f"Repo '{repo_name}' already exists in this project")
+
         site_id = str(uuid.uuid4())
         config: dict[str, Any] = {}
         if git_url:
