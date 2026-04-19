@@ -41,18 +41,30 @@ def decrypt_api_key(ciphertext: str) -> str:
 
 
 def mask_api_key(key: str) -> str:
-    """Mask an API key for display: 'sk-****abcd' or '****abcd'.
+    """Mask an API key for display, preserving original length.
+
+    Examples:
+        'sk-proj-abcdef123456' → 'sk-proj-ab******56'
+        'abcdef123456'         → 'abcd****3456'
 
     Returns empty string for empty input, passes through already-masked values.
     """
     if not key or "****" in key:
         return key
+    if len(key) <= 8:
+        return key[:2] + "*" * (len(key) - 2)
+    # Show first 4 and last 4 chars (after prefix if present)
     prefix = ""
     dash_pos = key.find("-")
     if 0 < dash_pos <= 10:
         prefix = key[: dash_pos + 1]
-    suffix = key[-4:] if len(key) >= 4 else key
-    return f"{prefix}****{suffix}"
+        rest = key[dash_pos + 1:]
+    else:
+        rest = key
+    show_start = min(4, len(rest))
+    show_end = min(4, len(rest) - show_start)
+    masked_len = len(rest) - show_start - show_end
+    return prefix + rest[:show_start] + "*" * masked_len + rest[len(rest) - show_end:] if show_end else prefix + rest[:show_start] + "*" * masked_len
 
 
 def is_masked(value: str) -> bool:
