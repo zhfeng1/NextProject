@@ -169,7 +169,12 @@ async def verify_model(
     if base_url:
         _validate_url_ssrf(base_url)
 
-    api_key = decrypt_api_key(p.api_key) if p.api_key else ""
+    # Resolve API key: prefer raw api_key from payload, fall back to DB
+    api_key = (payload.get("api_key") or "").strip()
+    if not api_key:
+        api_key = decrypt_api_key(p.api_key) if p.api_key else ""
+    if not api_key:
+        return {"ok": False, "error": "API Key 为空，请先输入并保存 Key"}
     fmt = p.format or "responses"
 
     try:
