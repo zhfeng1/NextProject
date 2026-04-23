@@ -325,7 +325,7 @@ async function savePassword() {
               @click="fetchModels(p)"
             >{{ p.fetching ? '拉取中...' : '拉取模型列表' }}</Button>
           </div>
-          <Input v-model="p.api_key" type="password" placeholder="输入新 Key 可覆盖，留空保持不变" />
+          <Input v-model="p.api_key" :type="p.api_key?.includes('*') ? 'text' : 'password'" placeholder="输入新 Key 可覆盖，留空保持不变" />
         </div>
         <!-- 格式 -->
         <div class="space-y-1.5 xl:col-span-2">
