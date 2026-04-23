@@ -35,4 +35,8 @@ export const providersAPI = {
   fetchModels(data: { base_url: string; api_key: string }) {
     return client.post<any, { ok: boolean; models: string[]; error?: string }>('/providers/fetch-models', data)
   },
+
+  verifyModel(data: { provider_id: string; model: string }) {
+    return client.post<any, { ok: boolean; message?: string; error?: string }>('/providers/verify-model', data)
+  },
 }
