@@ -82,7 +82,7 @@ const handleAddRepo = async () => {
           </CardTitle>
         </CardHeader>
         <CardContent class="text-sm text-muted-foreground space-y-1">
-          <span :class="repo.status === 'building' ? 'text-yellow-500' : repo.status === 'running' ? 'text-green-500' : 'text-gray-500'">
+          <span :class="repo.status === 'building' ? 'text-yellow-500' : repo.status === 'running' ? 'text-green-500' : repo.status === 'error' ? 'text-red-500' : 'text-gray-500'">
             {{ repo.status }}
           </span>
           <p>创建于: {{ formatDate(repo.created_at) }}</p>

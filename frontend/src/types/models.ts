@@ -24,7 +24,7 @@ export interface UserConfig {
 export interface Site {
   site_id: string
   name: string
-  status: 'running' | 'stopped' | 'failed' | 'building'
+  status: 'running' | 'stopped' | 'error' | 'building'
   port?: number
   preview_url?: string
   internal_url?: string
