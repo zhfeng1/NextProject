@@ -126,6 +126,9 @@ class SiteService:
     def docs_root(self, site_id: str) -> Path:
         return self.site_root(site_id) / "docs"
 
+    def np_root(self, site_id: str) -> Path:
+        return self.site_root(site_id) / ".np"
+
     def _ensure_docs_structure(self, root: Path) -> None:
         docs_dir = root / "docs"
         docs_dir.mkdir(parents=True, exist_ok=True)
@@ -139,6 +142,12 @@ class SiteService:
             if not requirements_file.exists() or not requirements_file.read_text(encoding="utf-8").strip():
                 requirements_file.write_text(legacy_requirements.read_text(encoding="utf-8"), encoding="utf-8")
             legacy_requirements.unlink()
+
+    def _ensure_np_structure(self, root: Path) -> None:
+        workflows_root = root / ".np" / "workflows"
+        (workflows_root / "runs").mkdir(parents=True, exist_ok=True)
+        (workflows_root / "current").mkdir(parents=True, exist_ok=True)
+        (workflows_root / "history").mkdir(parents=True, exist_ok=True)
 
     def requirements_file(self, site_id: str) -> Path:
         root = self.ensure_site_structure(site_id)
@@ -198,6 +207,7 @@ class SiteService:
             raise HTTPException(status_code=400, detail="Cloned repository is missing .git metadata")
 
         self._ensure_docs_structure(root)
+        self._ensure_np_structure(root)
         return root
 
     def preview_url_for_site(self, site_id: str) -> str:
@@ -275,11 +285,12 @@ class SiteService:
             _SITE_PROCESSES.pop(site_id, None)
             return False
 
-    def ensure_site_structure(self, site_id: str) -> Path:
-        root = self.site_root(site_id)
+    def ensure_site_structure(self, site_id: str, override_root: Path | None = None) -> Path:
+        root = override_root if override_root is not None else self.site_root(site_id)
         (root / "backend").mkdir(parents=True, exist_ok=True)
         (root / "frontend").mkdir(parents=True, exist_ok=True)
         self._ensure_docs_structure(root)
+        self._ensure_np_structure(root)
         data_file = root / "backend" / "site_data.json"
         if not data_file.exists():
             data_file.write_text(json.dumps(DEFAULT_SITE_DATA, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -444,8 +455,9 @@ class SiteService:
         git_branch: str | None = None,
         start_command: str | None = None,
     ) -> Site:
-        existing_sites = await self.list_sites(db, current_user, include_deleted=True)
-        existing_ids = {item.site_id for item in existing_sites}
+        rows = await db.execute(select(Site))
+        all_sites = list(rows.scalars().all())
+        existing_ids = {item.site_id for item in all_sites}
         if site_id:
             sid = ensure_site_id(site_id)
             if sid in existing_ids:
@@ -461,7 +473,7 @@ class SiteService:
             owner_id=getattr(current_user, "id", None),
             org_id=getattr(current_user, "default_org_id", None),
             status=SiteStatus.STOPPED.value,
-            port=self._next_port(existing_sites),
+            port=self._next_port(all_sites),
             template_id=template_id or None,
             config=config or {},
         )
