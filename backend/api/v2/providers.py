@@ -243,16 +243,16 @@ async def fetch_models(
     # SSRF mitigation: block private/internal networks
     _validate_url_ssrf(base_url)
 
-    # Resolve API key: prefer provider_id (encrypted in DB) over raw api_key
-    api_key = ""
-    provider_id = (payload.get("provider_id") or "").strip()
-    if provider_id:
-        user_id = str(getattr(current_user, "id"))
-        p = await db.get(UserLLMProvider, provider_id)
-        if p is not None and str(p.user_id) == user_id and p.api_key:
-            api_key = decrypt_api_key(p.api_key)
+    # Resolve API key: prefer raw api_key (user just typed it) over provider_id (DB)
+    # This ensures a newly entered key is tested immediately, even before saving.
+    api_key = (payload.get("api_key") or "").strip()
     if not api_key:
-        api_key = (payload.get("api_key") or "").strip()
+        provider_id = (payload.get("provider_id") or "").strip()
+        if provider_id:
+            user_id = str(getattr(current_user, "id"))
+            p = await db.get(UserLLMProvider, provider_id)
+            if p is not None and str(p.user_id) == user_id and p.api_key:
+                api_key = decrypt_api_key(p.api_key)
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
