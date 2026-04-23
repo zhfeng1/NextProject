@@ -23,6 +23,7 @@ class TaskType(str, enum.Enum):
     TEST_LOCAL_PLAYWRIGHT = "test_local_playwright"
     DEPLOY_LOCAL = "deploy_local"
     DEPLOY_APOLLO = "deploy_apollo"
+    CLONE_REPO = "clone_repo"
 
 
 class UserRole(str, enum.Enum):
