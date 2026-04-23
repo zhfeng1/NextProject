@@ -132,6 +132,11 @@ class ProjectService:
         for repo in repos:
             repo.deleted_at = datetime.now(timezone.utc)
         await db.commit()
+        # R-05: 清理磁盘上的项目目录
+        import shutil
+        project_dir = self.project_root(project_id)
+        if project_dir.exists():
+            shutil.rmtree(project_dir, ignore_errors=True)
 
     async def add_repo(
         self,
