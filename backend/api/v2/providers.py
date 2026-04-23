@@ -37,21 +37,21 @@ def _validate_url_ssrf(url: str) -> None:
     """Raise HTTPException if *url* targets a private / internal address."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
-        raise HTTPException(status_code=400, detail="base_url must use http or https protocol")
+        raise HTTPException(status_code=400, detail="base_url 必须使用 http 或 https 协议")
     hostname = parsed.hostname
     if not hostname:
-        raise HTTPException(status_code=400, detail="base_url has no valid hostname")
+        raise HTTPException(status_code=400, detail="base_url 主机名无效")
     try:
         resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
     except socket.gaierror:
-        raise HTTPException(status_code=400, detail=f"Cannot resolve hostname: {hostname}")
+        raise HTTPException(status_code=400, detail=f"无法解析主机名: {hostname}")
     for _family, _type, _proto, _canonname, sockaddr in resolved:
         ip = ipaddress.ip_address(sockaddr[0])
         for net in _BLOCKED_NETWORKS:
             if ip in net:
                 raise HTTPException(
                     status_code=400,
-                    detail="base_url must not point to internal/private network addresses",
+                    detail="base_url 不允许指向内网或私有网络地址",
                 )
 
 
@@ -115,7 +115,7 @@ async def update_provider(
     user_id = str(getattr(current_user, "id"))
     p = await db.get(UserLLMProvider, provider_id)
     if p is None or str(p.user_id) != user_id:
-        raise HTTPException(status_code=404, detail="Provider not found")
+        raise HTTPException(status_code=404, detail="Provider 未找到")
     allowed = {"name", "base_url", "api_key", "models", "format", "is_default"}
     for key, value in payload.items():
         if key not in allowed:
@@ -141,7 +141,7 @@ async def delete_provider(
     user_id = str(getattr(current_user, "id"))
     p = await db.get(UserLLMProvider, provider_id)
     if p is None or str(p.user_id) != user_id:
-        raise HTTPException(status_code=404, detail="Provider not found")
+        raise HTTPException(status_code=404, detail="Provider 未找到")
     await db.delete(p)
     await db.commit()
     return {"ok": True}
@@ -156,12 +156,12 @@ async def verify_model(
     provider_id = (payload.get("provider_id") or "").strip()
     model = (payload.get("model") or "").strip()
     if not provider_id or not model:
-        raise HTTPException(status_code=400, detail="provider_id and model are required")
+        raise HTTPException(status_code=400, detail="provider_id 和 model 为必填项")
 
     user_id = str(getattr(current_user, "id"))
     p = await db.get(UserLLMProvider, provider_id)
     if p is None or str(p.user_id) != user_id:
-        raise HTTPException(status_code=404, detail="Provider not found")
+        raise HTTPException(status_code=404, detail="Provider 未找到")
 
     base_url = (p.base_url or "").strip().rstrip("/")
 
@@ -243,7 +243,7 @@ async def fetch_models(
 ) -> dict[str, Any]:
     base_url = (payload.get("base_url") or "").strip().rstrip("/")
     if not base_url:
-        raise HTTPException(status_code=400, detail="base_url is required")
+        raise HTTPException(status_code=400, detail="base_url 为必填项")
 
     # SSRF mitigation: block private/internal networks
     _validate_url_ssrf(base_url)
