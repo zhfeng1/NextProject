@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useProjectStore } from '@/stores/project'
 import { formatDate } from '@/utils/format'
@@ -24,6 +24,34 @@ const addRepoForm = ref({ name: '', git_url: '', git_branch: '', git_username: '
 
 onMounted(() => {
   projectStore.fetchProject(projectId)
+})
+
+// R-16/R-19: 轮询检测 building 状态的仓库是否完成
+let pollTimer: ReturnType<typeof setInterval> | null = null
+const hasBuildingRepos = computed(() => project.value?.repos?.some(r => r.status === 'building') ?? false)
+
+watch(hasBuildingRepos, (building) => {
+  if (building && !pollTimer) {
+    pollTimer = setInterval(() => {
+      projectStore.fetchProject(projectId).then(() => {
+        if (!hasBuildingRepos.value && pollTimer) {
+          clearInterval(pollTimer)
+          pollTimer = null
+          toast.success('仓库克隆已完成')
+        }
+      })
+    }, 5000)
+  } else if (!building && pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}, { immediate: true })
+
+onUnmounted(() => {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
 })
 
 const handleAddRepo = async () => {
