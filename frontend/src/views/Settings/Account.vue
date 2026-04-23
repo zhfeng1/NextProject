@@ -125,7 +125,11 @@ async function verifyModel(p: ProviderUI, model: string) {
   p.verifying = model
   p.msg = ''
   try {
-    const res = await providersAPI.verifyModel({ provider_id: p.id, model })
+    const params: any = { provider_id: p.id, model }
+    if (p.api_key && !p.api_key.includes('****')) {
+      params.api_key = p.api_key
+    }
+    const res = await providersAPI.verifyModel(params)
     p.msg = res.ok ? `${model}: 连通正常` : `${model}: ${res.error || '验证失败'}`
   } catch (e: any) {
     p.msg = `${model}: ${e?.response?.data?.detail || '验证失败'}`
