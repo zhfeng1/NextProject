@@ -36,12 +36,13 @@ interface ProviderUI extends LLMProvider {
   saving: boolean
   msg: string
   manualModel: string
+  verifying: string
 }
 
 const providers = ref<ProviderUI[]>([])
 
 function toUI(p: LLMProvider): ProviderUI {
-  return { ...p, availableModels: [...(p.models || [])], fetching: false, saving: false, msg: '', manualModel: '' }
+  return { ...p, availableModels: [...(p.models || [])], fetching: false, saving: false, msg: '', manualModel: '', verifying: '' }
 }
 
 async function loadProviders() {
@@ -113,6 +114,19 @@ function addManualModel(p: ProviderUI) {
   if (!p.availableModels.includes(m)) p.availableModels.push(m)
   if (!p.models.includes(m)) p.models.push(m)
   p.manualModel = ''
+}
+
+async function verifyModel(p: ProviderUI, model: string) {
+  p.verifying = model
+  p.msg = ''
+  try {
+    const res = await providersAPI.verifyModel({ provider_id: p.id, model })
+    p.msg = res.ok ? `${model}: 连通正常` : `${model}: ${res.error || '验证失败'}`
+  } catch (e: any) {
+    p.msg = `${model}: ${e?.response?.data?.detail || '验证失败'}`
+  } finally {
+    p.verifying = ''
+  }
 }
 
 // ── 初始化 ──
@@ -334,6 +348,13 @@ async function savePassword() {
                 :class="p.models.includes(m) ? 'bg-primary border-primary text-white' : 'border-muted-foreground/40'"
               >{{ p.models.includes(m) ? '✓' : '' }}</span>
               {{ m }}
+              <button
+                v-if="p.models.includes(m)"
+                type="button"
+                class="ml-1 text-[9px] text-muted-foreground hover:text-primary underline"
+                :disabled="p.verifying === m"
+                @click.stop="verifyModel(p, m)"
+              >{{ p.verifying === m ? '...' : '验证' }}</button>
             </label>
           </div>
           <div v-else class="text-xs text-muted-foreground">输入 URL 和 Key 后点击「拉取模型列表」，或在下方手动添加</div>
@@ -349,7 +370,7 @@ async function savePassword() {
       </CardContent>
       <CardFooter class="flex items-center gap-3">
         <Button @click="saveProvider(p)" :disabled="p.saving">{{ p.saving ? '保存中...' : '保存' }}</Button>
-        <span v-if="p.msg" class="text-sm" :class="p.msg.includes('已保存') || p.msg.includes('获取到') ? 'text-green-600' : 'text-muted-foreground'">{{ p.msg }}</span>
+        <span v-if="p.msg" class="text-sm" :class="p.msg.includes('已保存') || p.msg.includes('获取到') || p.msg.includes('连通正常') ? 'text-green-600' : 'text-muted-foreground'">{{ p.msg }}</span>
       </CardFooter>
     </Card>
   </div>
