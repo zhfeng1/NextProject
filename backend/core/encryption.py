@@ -27,10 +27,17 @@ def encrypt_api_key(plaintext: str) -> str:
 
 
 def decrypt_api_key(ciphertext: str) -> str:
-    """Decrypt an API key. Returns empty string for empty input."""
+    """Decrypt an API key. Returns empty string for empty input.
+
+    Returns empty string if decryption fails (e.g., FERNET_KEY changed),
+    preventing API-wide 500 errors from a single bad record.
+    """
     if not ciphertext:
         return ""
-    return _get_fernet().decrypt(ciphertext.encode()).decode()
+    try:
+        return _get_fernet().decrypt(ciphertext.encode()).decode()
+    except Exception:
+        return ""
 
 
 def mask_api_key(key: str) -> str:

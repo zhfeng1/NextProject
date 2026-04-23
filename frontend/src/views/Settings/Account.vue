@@ -88,7 +88,7 @@ async function fetchModels(p: ProviderUI) {
   p.fetching = true
   p.msg = ''
   try {
-    const res = await providersAPI.fetchModels({ base_url: p.base_url, api_key: p.api_key })
+    const res = await providersAPI.fetchModels({ base_url: p.base_url, provider_id: p.id })
     if (res.ok && res.models?.length) {
       p.availableModels = res.models
       p.msg = `获取到 ${res.models.length} 个模型`
