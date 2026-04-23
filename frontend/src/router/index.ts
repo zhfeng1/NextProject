@@ -51,6 +51,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Projects/ProjectDetail.vue'),
       },
       {
+        path: 'projects/:id/edit',
+        name: 'ProjectEditor',
+        component: () => import('@/views/Projects/ProjectEditor.vue'),
+      },
+      {
         path: 'sites',
         redirect: '/projects',
       },
