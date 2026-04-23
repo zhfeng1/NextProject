@@ -214,23 +214,24 @@ class SiteService:
     def preview_url_for_site(self, site_id: str) -> str:
         return f"/preview/{site_id}/"
 
-    def resolve_site_path(self, site_id: str, relative_path: str = "") -> Path:
-        root = self.ensure_site_structure(site_id).resolve()
+    def resolve_site_path(self, site_id: str, relative_path: str = "", override_root: Path | None = None) -> tuple[Path, Path]:
+        root = (override_root if override_root is not None else self.ensure_site_structure(site_id)).resolve()
+        if not root.exists():
+            root.mkdir(parents=True, exist_ok=True)
         target = (root / (relative_path or "")).resolve()
         try:
             target.relative_to(root)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="Invalid file path") from exc
-        return target
+        return root, target
 
-    def list_site_files(self, site_id: str, relative_path: str = "") -> dict[str, Any]:
-        target = self.resolve_site_path(site_id, relative_path)
+    def list_site_files(self, site_id: str, relative_path: str = "", override_root: Path | None = None) -> dict[str, Any]:
+        root, target = self.resolve_site_path(site_id, relative_path, override_root=override_root)
         if not target.exists():
             raise HTTPException(status_code=404, detail="Directory not found")
         if not target.is_dir():
             raise HTTPException(status_code=400, detail="Path is not a directory")
 
-        root = self.site_root(site_id).resolve()
         entries: list[dict[str, Any]] = []
         for item in sorted(target.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())):
             if item.name == ".git":
@@ -253,10 +254,10 @@ class SiteService:
             "entries": entries,
         }
 
-    def read_site_file(self, site_id: str, relative_path: str) -> dict[str, Any]:
+    def read_site_file(self, site_id: str, relative_path: str, override_root: Path | None = None) -> dict[str, Any]:
         if not relative_path:
             raise HTTPException(status_code=400, detail="File path is required")
-        target = self.resolve_site_path(site_id, relative_path)
+        root, target = self.resolve_site_path(site_id, relative_path, override_root=override_root)
         if not target.exists():
             raise HTTPException(status_code=404, detail="File not found")
         if not target.is_file():
@@ -266,7 +267,6 @@ class SiteService:
         preview = raw[:FILE_PREVIEW_MAX_BYTES]
         is_binary = b"\x00" in preview
         content = "" if is_binary else preview.decode("utf-8", errors="replace")
-        root = self.site_root(site_id).resolve()
         return {
             "path": target.relative_to(root).as_posix(),
             "name": target.name,
