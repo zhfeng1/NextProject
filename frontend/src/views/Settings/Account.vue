@@ -101,7 +101,7 @@ async function fetchModels(p: ProviderUI) {
       p.msg = res.error || '未获取到模型，可手动输入'
     }
   } catch (e: any) {
-    p.msg = '拉取失败，可手动输入'
+    p.msg = e?.response?.data?.detail || '拉取失败，可手动输入'
   } finally {
     p.fetching = false
   }
