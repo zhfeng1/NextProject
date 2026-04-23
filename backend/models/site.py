@@ -23,6 +23,9 @@ class Site(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), nullable=False)
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    project_id: Mapped[str | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True, default=None
+    )
     status: Mapped[str] = mapped_column(String(20), default=SiteStatus.STOPPED.value, nullable=False)
     port: Mapped[int | None] = mapped_column(Integer, unique=True, default=None)
     template_id: Mapped[str | None] = mapped_column(ForeignKey("templates.id"), default=None)
