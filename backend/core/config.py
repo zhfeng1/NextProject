@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     celery_result_backend: str = Field(default="redis://localhost:6379/1", alias="CELERY_RESULT_BACKEND")
 
     secret_key: str = Field(alias="SECRET_KEY")
+    fernet_key: str = Field(alias="FERNET_KEY")
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
@@ -100,6 +101,19 @@ class Settings(BaseSettings):
             )
         if len(value) < 32:
             raise ValueError("SECRET_KEY must be at least 32 characters long")
+        return value
+
+    @field_validator("fernet_key")
+    @classmethod
+    def validate_fernet_key(cls, value: str) -> str:
+        value = value.strip()
+        if not value or value == "replace-with-fernet-key":
+            raise ValueError(
+                "FERNET_KEY must be set. "
+                'Generate one with: python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
+            )
+        if len(value) != 44:
+            raise ValueError("FERNET_KEY must be a valid Fernet key (44 characters, base64 encoded)")
         return value
 
     @staticmethod
