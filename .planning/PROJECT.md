@@ -29,7 +29,7 @@ NextProject 是一个 SaaS AI 开发平台，让用户通过自然语言驱动 A
 
 ### Active
 
-- [ ] 用户可配置自己的 Claude/OpenAI API Key 并验证连通性
+- [x] 用户可配置自己的 Claude/OpenAI API Key 并验证连通性 — Validated in Phase 1: security-hardening
 - [ ] 用户可通过自然语言描述需求，AI 自动拆解为子任务并逐步编码实现
 - [ ] 用户可在编辑器内与 AI 对话，AI 逐步修改代码（对话式编码）
 - [ ] 开发任务支持状态跟踪（待处理/进行中/已完成/失败）
@@ -117,4 +117,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-23 after initialization*
+*Last updated: 2026-04-27 — Phase 1 (security-hardening) complete*
