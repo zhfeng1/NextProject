@@ -143,8 +143,8 @@ const handleDeleteRepo = async (repoId: string, repoName: string) => {
         </DialogHeader>
         <div class="space-y-4">
           <div>
-            <Label>仓库名称</Label>
-            <Input v-model="addRepoForm.name" placeholder="输入仓库名称" />
+            <Label>仓库名称 <span class="text-destructive">*</span></Label>
+            <Input v-model="addRepoForm.name" placeholder="输入仓库名称" required />
           </div>
           <div>
             <Label>Git URL</Label>
