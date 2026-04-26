@@ -97,6 +97,17 @@ async def add_repo(
     return {"ok": True, "repo": site_service.serialize_site(site)}
 
 
+@router.delete("/{project_id}/repos/{repo_id}")
+async def delete_repo(
+    project_id: str,
+    repo_id: str,
+    current_user: object = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    await project_service.delete_repo(db, project_id, repo_id, current_user)
+    return {"ok": True}
+
+
 @router.get("/{project_id}/repos/{repo_id}/files")
 async def list_repo_files(
     project_id: str,
