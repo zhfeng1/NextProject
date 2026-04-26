@@ -1,0 +1,20 @@
+{
+  "angle": "risk",
+  "status": "completed",
+  "summary": "The highest-risk paths are privileged legacy config/task routes, unauthenticated log streaming, raw shell startup, host Docker socket access, and destructive rollback without validation.",
+  "findings": [
+    "backend/main.py exposes /api/config and many legacy task/provider routes with default-admin behavior through get_legacy_user().",
+    "backend/api/v2/websocket.py exposes task logs and status for any task id without auth or ownership checks.",
+    "backend/services/site_service.py executes start_command through sh -lc, which preserves shell injection semantics.",
+    "docker-compose.yml mounts /var/run/docker.sock into main-service and celery-worker by default.",
+    "backend/services/version_service.py removes the live site tree before validating restore success."
+  ],
+  "hotspots": [
+    "backend/main.py",
+    "backend/api/v2/websocket.py",
+    "backend/services/site_service.py",
+    "docker-compose.yml",
+    "backend/services/version_service.py"
+  ],
+  "clarification_needs": []
+}

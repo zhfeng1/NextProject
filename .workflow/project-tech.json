@@ -1,0 +1,21 @@
+{
+  "detected_at": "2026-04-20T06:21:26Z",
+  "languages": ["TypeScript", "JavaScript", "Python"],
+  "frameworks": ["Vue 3", "Vite", "Pinia", "FastAPI", "SQLAlchemy", "Celery"],
+  "package_manager": "npm",
+  "build_system": "Vite + Docker Compose",
+  "test_framework": "pytest + Playwright (Vitest installed but not yet established)",
+  "linter": "ESLint + Prettier",
+  "architecture": {
+    "type": "monorepo",
+    "entry_points": ["backend/main.py", "frontend/src/main.ts"],
+    "key_directories": [
+      "backend/",
+      "frontend/",
+      "docs/",
+      "main_service/",
+      "monitoring/",
+      "k8s/"
+    ]
+  }
+}

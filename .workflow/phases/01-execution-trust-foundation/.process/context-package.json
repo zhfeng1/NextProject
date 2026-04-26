@@ -1,0 +1,137 @@
+{
+  "phase": {
+    "number": 1,
+    "slug": "execution-trust-foundation",
+    "title": "Execution Trust Foundation",
+    "goal": "建立可信的任务执行、运行时隔离、版本恢复与监控基础，让平台先具备结果可信、失败可诊断、问题可回滚的底座。",
+    "requirements": [
+      "REQ-003 强化平台可靠性与隔离能力，包括容器化子站点、版本回滚、监控告警和更稳定的任务执行能力"
+    ],
+    "success_criteria": [
+      "任务执行结果能够真实反映预览重启、部署与关键后处理是否成功，失败不会再以成功态误导用户。",
+      "子站点运行与任务执行具备更明确的隔离边界，关键高风险路径不再默认依赖宿主级权限。",
+      "版本快照、回滚与基础监控成为可依赖能力，出现异常时可以定位、恢复并给出清晰状态。"
+    ]
+  },
+  "inputs": {
+    "context_md_found": false,
+    "roadmap_source": ".workflow/roadmap.md",
+    "project_source": ".workflow/project.md",
+    "planning_specs_loaded": [
+      "Architecture Constraints",
+      "Validation Rules"
+    ],
+    "wiki_prior_knowledge": {
+      "title": "Wiki Prior Knowledge",
+      "entries": [
+        {
+          "id": "roadmap-roadmap",
+          "type": "roadmap",
+          "title": "Roadmap: NextProject",
+          "summary": "Phase 1 is Execution Trust Foundation and Phase 2 depends on it."
+        },
+        {
+          "id": "spec-architecture-constraints",
+          "type": "spec",
+          "title": "Architecture Constraints",
+          "summary": "Keep api -> services layering, keep async work in tasks/services, preserve legacy compatibility while tightening behavior."
+        },
+        {
+          "id": "spec-validation-rules",
+          "type": "spec",
+          "title": "Validation Rules",
+          "summary": "Backend changes need targeted pytest coverage, and user-facing flows need success and failure-path verification."
+        }
+      ]
+    }
+  },
+  "explorations": {
+    "architecture": {
+      "angle": "architecture",
+      "status": "completed",
+      "summary": "Phase 1 should harden execution truth, legacy control-path auth, runtime isolation, rollback integrity, and observability without rewriting the modular monolith.",
+      "findings": [
+        "backend/services/task_service.py is the execution truth boundary for status, logs, provider output, and preview restart.",
+        "backend/main.py still exposes legacy /api/* control paths through get_legacy_user(), creating a privileged compatibility surface.",
+        "backend/services/site_service.py and docker-compose.yml currently leave host-level execution paths enabled by default.",
+        "backend/services/version_service.py already owns snapshot/rollback and is the right seam for rollback hardening.",
+        "backend/core/metrics.py is the existing observability entry point and should be extended instead of adding a new telemetry path."
+      ],
+      "hotspots": [
+        "backend/services/task_service.py",
+        "backend/main.py",
+        "backend/services/site_service.py",
+        "backend/services/version_service.py",
+        "backend/core/metrics.py",
+        "docker-compose.yml"
+      ],
+      "clarification_needs": []
+    },
+    "implementation": {
+      "angle": "implementation",
+      "status": "completed",
+      "summary": "The smallest viable decomposition is to first persist execution identity and access control primitives, then make status/result propagation and metrics reflect those primitives.",
+      "findings": [
+        "enqueue_task() dispatches Celery jobs but does not persist celery_task_id even though AgentTask has a celery_task_id column.",
+        "run_develop_task() marks SUCCESS even when preview restart fails, and deploy_task() marks SUCCESS immediately after restart_site().",
+        "task_logs_websocket() accepts any task id and replays logs without auth or ownership checks.",
+        "version_service.rollback_to_version() destroys the live root and untars directly without checksum or staging validation.",
+        "useTaskLogs.ts builds a raw websocket URL today, so authenticated websocket access needs an explicit token transport."
+      ],
+      "hotspots": [
+        "backend/tasks/develop_code.py",
+        "backend/tasks/deploy.py",
+        "backend/tasks/test.py",
+        "backend/api/v2/websocket.py",
+        "frontend/src/composables/useTaskLogs.ts"
+      ],
+      "clarification_needs": []
+    },
+    "integration": {
+      "angle": "integration",
+      "status": "completed",
+      "summary": "Phase 1 spans DB-backed task truth, Celery worker boundaries, websocket fan-out, legacy compatibility routes, filesystem-backed snapshots, and the default runtime compose topology.",
+      "findings": [
+        "Task truth crosses database state, websocket publish, provider output artifacts, and preview runtime restart results.",
+        "Legacy /api/* and /api/v2 coexist, so risky legacy routes must be tightened without removing compatibility paths.",
+        "Websocket log streaming depends on task_service.publish() -> Redis pub/sub -> websocket_manager broadcast.",
+        "Rollback integrity depends on site root replacement and subsequent site restart inside site_service.",
+        "Isolation work touches both process startup in site_service and host privileges granted by docker-compose.yml."
+      ],
+      "hotspots": [
+        "backend/services/websocket_service.py",
+        "backend/api/v2/tasks.py",
+        "backend/api/v2/versions.py",
+        "backend/models/task.py",
+        "backend/models/version.py"
+      ],
+      "clarification_needs": []
+    },
+    "risk": {
+      "angle": "risk",
+      "status": "completed",
+      "summary": "The highest-risk paths are privileged legacy config/task routes, unauthenticated log streaming, raw shell startup, host Docker socket access, and destructive rollback without validation.",
+      "findings": [
+        "backend/main.py exposes /api/config and many legacy task/provider routes with default-admin behavior through get_legacy_user().",
+        "backend/api/v2/websocket.py exposes task logs and status for any task id without auth or ownership checks.",
+        "backend/services/site_service.py executes start_command through sh -lc, which preserves shell injection semantics.",
+        "docker-compose.yml mounts /var/run/docker.sock into main-service and celery-worker by default.",
+        "backend/services/version_service.py removes the live site tree before validating restore success."
+      ],
+      "hotspots": [
+        "backend/main.py",
+        "backend/api/v2/websocket.py",
+        "backend/services/site_service.py",
+        "docker-compose.yml",
+        "backend/services/version_service.py"
+      ],
+      "clarification_needs": []
+    }
+  },
+  "planning_constraints": [
+    "Brownfield incremental evolution over rewrite.",
+    "Preserve backend api -> services layering.",
+    "Keep legacy /api and /api/v2 compatibility unless an endpoint is explicitly tightened.",
+    "Prefer minimal direct changes and targeted tests."
+  ]
+}

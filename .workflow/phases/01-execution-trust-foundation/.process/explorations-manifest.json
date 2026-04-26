@@ -1,0 +1,24 @@
+{
+  "explorations": [
+    {
+      "angle": "architecture",
+      "file": ".process/exploration-architecture.json",
+      "status": "completed"
+    },
+    {
+      "angle": "implementation",
+      "file": ".process/exploration-implementation.json",
+      "status": "completed"
+    },
+    {
+      "angle": "integration",
+      "file": ".process/exploration-integration.json",
+      "status": "completed"
+    },
+    {
+      "angle": "risk",
+      "file": ".process/exploration-risk.json",
+      "status": "completed"
+    }
+  ]
+}

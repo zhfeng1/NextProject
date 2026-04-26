@@ -1,0 +1,126 @@
+{
+  "id": "TASK-002",
+  "title": "Require auth on risky legacy control paths and stop returning secrets",
+  "description": "Keep legacy /api compatibility paths, but require authenticated access on risky config/task/provider flows and remove raw secret values from legacy config reads.",
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "fix",
+  "priority": "high",
+  "effort": "medium",
+  "action": "In backend/main.py, replace get_legacy_user() usage on /api/config, /api/tasks/{task_id}, /api/tasks/{task_id}/logs, /api/tasks/{task_id}/cancel, /api/build-site, /api/adjust-site, and /api/providers/{provider}/auth/* routes with Depends(get_current_user) or Depends(require_role(...)) as appropriate; keep response envelopes stable, but remove llm_api_key, codex_client_secret, and codex_access_token from the GET /api/config response body.",
+  "status": "pending",
+  "completed_at": null,
+  "actual_duration": null,
+  "scope": "backend/main.py legacy api surface",
+  "focus_paths": [
+    "backend/main.py",
+    "backend/api/deps.py",
+    "backend/tests/test_legacy_api_security.py"
+  ],
+  "read_first": [
+    "backend/main.py",
+    "backend/api/deps.py",
+    "backend/core/security.py",
+    "backend/api/v2/tasks.py",
+    "backend/tests/conftest.py"
+  ],
+  "depends_on": [],
+  "wave": 1,
+  "parallel_group": "wave1-b",
+  "execution_group": null,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "backend/main.py contains \"async def get_config(current_user: object = Depends(get_current_user), db: AsyncSession = Depends(get_db))\"",
+      "backend/main.py contains \"async def create_legacy_task(payload: dict[str, Any] = Body(default_factory=dict), current_user: object = Depends(require_role(\"developer\")), db: AsyncSession = Depends(get_db))\"",
+      "backend/main.py does not contain \"\"llm_api_key\": config.llm_api_key\"",
+      "backend/main.py does not contain \"\"codex_client_secret\": config.codex_client_secret\"",
+      "backend/main.py does not contain \"\"codex_access_token\": config.codex_access_token\"",
+      "backend/tests/test_legacy_api_security.py contains \"test_legacy_config_requires_auth\"",
+      "backend/tests/test_legacy_api_security.py contains \"test_legacy_config_omits_secret_fields\"",
+      "pytest backend/tests/test_legacy_api_security.py -q exits 0"
+    ],
+    "verification": "Run pytest backend/tests/test_legacy_api_security.py -q",
+    "definition_of_done": "Legacy compatibility routes still exist, but risky control paths now require a real authenticated user and no longer leak provider secrets."
+  },
+  "files": [
+    {
+      "path": "backend/main.py",
+      "action": "modify",
+      "target": "legacy config/task/provider routes",
+      "change": "Require real current_user dependencies and remove secret fields from GET /api/config."
+    },
+    {
+      "path": "backend/api/deps.py",
+      "action": "modify",
+      "target": "dependency helpers if needed",
+      "change": "Reuse existing get_current_user/require_role helpers for legacy route protection without adding a new auth system."
+    },
+    {
+      "path": "backend/tests/test_legacy_api_security.py",
+      "action": "create",
+      "target": "legacy security tests",
+      "change": "Add tests for authenticated access and secret omission on legacy config/task/provider routes."
+    }
+  ],
+  "implementation": [
+    "Update the exact legacy routes listed in the action field to accept current_user through existing auth dependencies instead of default-admin resolution.",
+    "Keep the route paths and non-secret response keys stable so legacy clients continue to function after authentication.",
+    "Sanitize GET /api/config so llm_api_key, codex_client_secret, and codex_access_token are omitted from the returned JSON.",
+    "Add focused pytest coverage that verifies anonymous requests fail and authenticated requests still receive the expected non-secret response shape."
+  ],
+  "test": {
+    "commands": [
+      "pytest backend/tests/test_legacy_api_security.py -q"
+    ],
+    "unit": [
+      "backend/tests/test_legacy_api_security.py::test_legacy_config_requires_auth",
+      "backend/tests/test_legacy_api_security.py::test_legacy_config_omits_secret_fields"
+    ],
+    "integration": [],
+    "success_metrics": [
+      "Anonymous legacy control-path requests fail",
+      "Legacy config reads no longer expose provider secrets"
+    ]
+  },
+  "reference": {
+    "pattern": "Authenticated v2 task APIs",
+    "files": [
+      "backend/api/v2/tasks.py",
+      "backend/api/deps.py"
+    ],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "Tightening the risky legacy routes preserves compatibility while removing the most dangerous privileged shortcuts.",
+    "decision_factors": [
+      "Legacy /api and /api/v2 coexist today",
+      "get_current_user and require_role already exist",
+      "Returning raw secrets directly conflicts with trust and quality goals"
+    ],
+    "tradeoffs": "Legacy clients must authenticate, but route names and most response fields remain stable."
+  },
+  "risks": [
+    "Be careful not to remove unrelated low-risk legacy routes in the same change."
+  ],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": [
+      "Legacy control plane",
+      "Provider configuration"
+    ],
+    "affected_components": [
+      "backend main app"
+    ],
+    "affected_requirements": [
+      "REQ-003"
+    ],
+    "adr_ids": []
+  },
+  "meta": {
+    "estimated_time": "0.5 day",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false
+  }
+}

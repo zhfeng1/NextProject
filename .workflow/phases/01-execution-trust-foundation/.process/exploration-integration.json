@@ -1,0 +1,20 @@
+{
+  "angle": "integration",
+  "status": "completed",
+  "summary": "Phase 1 spans DB-backed task truth, Celery worker boundaries, websocket fan-out, legacy compatibility routes, filesystem-backed snapshots, and the default runtime compose topology.",
+  "findings": [
+    "Task truth crosses database state, websocket publish, provider output artifacts, and preview runtime restart results.",
+    "Legacy /api/* and /api/v2 coexist, so risky legacy routes must be tightened without removing compatibility paths.",
+    "Websocket log streaming depends on task_service.publish() -> Redis pub/sub -> websocket_manager broadcast.",
+    "Rollback integrity depends on site root replacement and subsequent site restart inside site_service.",
+    "Isolation work touches both process startup in site_service and host privileges granted by docker-compose.yml."
+  ],
+  "hotspots": [
+    "backend/services/websocket_service.py",
+    "backend/api/v2/tasks.py",
+    "backend/api/v2/versions.py",
+    "backend/models/task.py",
+    "backend/models/version.py"
+  ],
+  "clarification_needs": []
+}

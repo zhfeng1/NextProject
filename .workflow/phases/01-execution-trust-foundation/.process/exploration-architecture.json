@@ -1,0 +1,21 @@
+{
+  "angle": "architecture",
+  "status": "completed",
+  "summary": "Phase 1 should harden execution truth, legacy control-path auth, runtime isolation, rollback integrity, and observability without rewriting the modular monolith.",
+  "findings": [
+    "backend/services/task_service.py is the execution truth boundary for status, logs, provider output, and preview restart.",
+    "backend/main.py still exposes legacy /api/* control paths through get_legacy_user(), creating a privileged compatibility surface.",
+    "backend/services/site_service.py and docker-compose.yml currently leave host-level execution paths enabled by default.",
+    "backend/services/version_service.py already owns snapshot/rollback and is the right seam for rollback hardening.",
+    "backend/core/metrics.py is the existing observability entry point and should be extended instead of adding a new telemetry path."
+  ],
+  "hotspots": [
+    "backend/services/task_service.py",
+    "backend/main.py",
+    "backend/services/site_service.py",
+    "backend/services/version_service.py",
+    "backend/core/metrics.py",
+    "docker-compose.yml"
+  ],
+  "clarification_needs": []
+}

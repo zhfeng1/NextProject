@@ -1,0 +1,79 @@
+{
+  "summary": "Phase 1 hardens four trust primitives first—execution identity, legacy control-path auth, runtime isolation, and rollback integrity—then uses those primitives to secure websocket task visibility and make final task outcomes plus metrics reflect actual preview readiness and recovery state.",
+  "approach": "Use three waves. Wave 1 fixes independent high-risk seams without rewriting the product. Wave 2 authenticates websocket log access and propagates richer task status to the UI. Wave 3 makes develop/deploy terminal outcomes and monitoring truthful by combining persisted execution identity, rollback checkpoints, and preview-readiness verification.",
+  "task_ids": [
+    "TASK-001",
+    "TASK-002",
+    "TASK-003",
+    "TASK-004",
+    "TASK-005",
+    "TASK-006"
+  ],
+  "task_count": 6,
+  "complexity": "high",
+  "estimated_time": "3-4 focused days",
+  "recommended_execution": "Agent",
+  "waves": [
+    {
+      "wave": 1,
+      "tasks": [
+        "TASK-001",
+        "TASK-002",
+        "TASK-003",
+        "TASK-004"
+      ]
+    },
+    {
+      "wave": 2,
+      "tasks": [
+        "TASK-005"
+      ]
+    },
+    {
+      "wave": 3,
+      "tasks": [
+        "TASK-006"
+      ]
+    }
+  ],
+  "data_flow": {
+    "diagram": null,
+    "stages": [
+      "Task creation -> Celery enqueue -> worker execution -> status/log publish -> websocket/UI consumption",
+      "Snapshot creation -> archive integrity metadata -> staged rollback -> preview restart/validation",
+      "Legacy and websocket access -> authenticated ownership checks -> sanitized responses/events",
+      "Truthful terminal outcome -> Prometheus metrics -> /metrics and stats consumers"
+    ]
+  },
+  "design_decisions": [
+    "Keep the modular monolith and tighten internal boundaries instead of extracting services.",
+    "Preserve route compatibility where possible, but require auth and stop returning secrets on risky legacy routes.",
+    "Reuse existing task_service, version_service, websocket_service, and metrics seams instead of introducing new frameworks."
+  ],
+  "shared_context": {
+    "patterns": [
+      "backend/api/v2/tasks.py uses get_current_user/require_role for authenticated task APIs.",
+      "backend/tasks/_helpers.py provides fresh AsyncSession lifecycle for Celery workers.",
+      "backend/tests/conftest.py provides async client/auth fixtures and resets Prometheus registry."
+    ],
+    "conventions": [
+      "Backend changes should stay inside api -> services -> models/core/utils boundaries.",
+      "Add targeted pytest coverage in backend/tests/ near the touched behavior.",
+      "Keep user-facing status semantics explicit and machine-verifiable."
+    ],
+    "dependencies": [
+      "Redis pub/sub for websocket log fan-out.",
+      "Celery worker tasks for develop/deploy/test execution.",
+      "Site runtime restart path in backend/services/site_service.py.",
+      "Prometheus metrics exposure via backend/core/metrics.py and backend/main.py."
+    ]
+  },
+  "_metadata": {
+    "timestamp": "2026-04-20T08:21:30Z",
+    "source": "workflow-planner",
+    "planning_mode": "full",
+    "plan_type": "feature",
+    "schema_version": "2.0",
+    "git_commit": null
+  }
+}

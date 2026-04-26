@@ -1,0 +1,120 @@
+{
+  "id": "TASK-004",
+  "title": "Make snapshot and rollback validation trustworthy",
+  "description": "Add snapshot integrity metadata and staged rollback so restore does not destroy the live site before validation succeeds.",
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "fix",
+  "priority": "high",
+  "effort": "medium",
+  "action": "In backend/services/version_service.py, compute a SHA-256 hash for each created snapshot archive and store it under SiteVersion.diff_summary[\"archive_sha256\"]; during rollback_to_version(), download the archive, verify the stored SHA-256, validate tar member paths with Python tarfile before extraction, extract into a temporary staging directory, and only replace the live site root after extraction and validation succeed; remove the direct subprocess tar extraction path.",
+  "status": "pending",
+  "completed_at": null,
+  "actual_duration": null,
+  "scope": "backend/services/version_service.py",
+  "focus_paths": [
+    "backend/services/version_service.py",
+    "backend/api/v2/versions.py",
+    "backend/tests/test_versions.py"
+  ],
+  "read_first": [
+    "backend/services/version_service.py",
+    "backend/api/v2/versions.py",
+    "backend/models/version.py",
+    "backend/services/site_service.py",
+    "backend/tests/conftest.py"
+  ],
+  "depends_on": [],
+  "wave": 1,
+  "parallel_group": "wave1-d",
+  "execution_group": null,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "backend/services/version_service.py contains \"archive_sha256\"",
+      "backend/services/version_service.py contains \"hashlib.sha256(\"",
+      "backend/services/version_service.py contains \"tar.getmembers()\"",
+      "backend/services/version_service.py contains \"tempfile.mkdtemp(\"",
+      "backend/services/version_service.py does not contain \"subprocess.run([\"tar\", \"-xzf\", archive_path, \"-C\", str(root)], check=True)\"",
+      "backend/tests/test_versions.py contains \"test_snapshot_records_archive_sha256\"",
+      "backend/tests/test_versions.py contains \"test_rollback_uses_staging_and_verifies_checksum\"",
+      "pytest backend/tests/test_versions.py -q exits 0"
+    ],
+    "verification": "Run pytest backend/tests/test_versions.py -q",
+    "definition_of_done": "Rollback verifies archive integrity and restores through a staged path before replacing the live site tree."
+  },
+  "files": [
+    {
+      "path": "backend/services/version_service.py",
+      "action": "modify",
+      "target": "create_snapshot and rollback_to_version",
+      "change": "Store archive SHA-256 metadata, validate tar members, extract into staging, and replace the live site only after validation succeeds."
+    },
+    {
+      "path": "backend/tests/test_versions.py",
+      "action": "create",
+      "target": "version restore tests",
+      "change": "Add coverage for snapshot checksum metadata and staged rollback success/failure behavior."
+    }
+  ],
+  "implementation": [
+    "Add a small SHA-256 helper in version_service and store the digest inside diff_summary[\"archive_sha256\"] when create_snapshot() uploads the archive.",
+    "Replace subprocess tar extraction with Python tarfile member inspection and extraction into a temporary staging directory.",
+    "Only stop the site and swap the live root after archive checksum validation and staging extraction both succeed.",
+    "Add pytest coverage for successful rollback and checksum-validation failure without destructive live-root replacement."
+  ],
+  "test": {
+    "commands": [
+      "pytest backend/tests/test_versions.py -q"
+    ],
+    "unit": [
+      "backend/tests/test_versions.py::test_snapshot_records_archive_sha256",
+      "backend/tests/test_versions.py::test_rollback_uses_staging_and_verifies_checksum"
+    ],
+    "integration": [],
+    "success_metrics": [
+      "Snapshot records archive_sha256",
+      "Rollback failure does not destroy the live site before validation passes"
+    ]
+  },
+  "reference": {
+    "pattern": "Version APIs already go through version_service and authenticated site access",
+    "files": [
+      "backend/api/v2/versions.py",
+      "backend/models/version.py"
+    ],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "This strengthens the existing version_service seam instead of inventing a separate rollback subsystem.",
+    "decision_factors": [
+      "Snapshot/rollback already lives in version_service",
+      "SiteVersion.diff_summary can hold integrity metadata without a schema change",
+      "destructive live-root replacement is the main current trust gap"
+    ],
+    "tradeoffs": "Rollback code becomes slightly longer, but it becomes diagnosable and reversible."
+  },
+  "risks": [
+    "Be careful to clean up staging directories on both success and failure."
+  ],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": [
+      "Site versions",
+      "Rollback"
+    ],
+    "affected_components": [
+      "version service"
+    ],
+    "affected_requirements": [
+      "REQ-003"
+    ],
+    "adr_ids": []
+  },
+  "meta": {
+    "estimated_time": "0.5 day",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false
+  }
+}

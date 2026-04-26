@@ -1,0 +1,124 @@
+{
+  "id": "TASK-003",
+  "title": "Remove default host-level runtime paths from app and worker flows",
+  "description": "Eliminate default host Docker socket access for main app and worker containers, and replace raw shell startup with a validated non-shell runtime command path.",
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "refactor",
+  "priority": "high",
+  "effort": "high",
+  "action": "In docker-compose.yml, remove the /var/run/docker.sock:/var/run/docker.sock mount from the main-service and celery-worker services; in backend/services/site_service.py, replace the [\"sh\", \"-lc\", start_command] path with a validator that rejects shell metacharacters such as ;, &&, ||, |, `, $(), >, and <, then executes the validated command through shlex.split(start_command); keep the default uvicorn startup path unchanged when start_command is empty.",
+  "status": "pending",
+  "completed_at": null,
+  "actual_duration": null,
+  "scope": "runtime isolation and process startup",
+  "focus_paths": [
+    "docker-compose.yml",
+    "backend/services/site_service.py",
+    "backend/tests/test_runtime_isolation.py"
+  ],
+  "read_first": [
+    "docker-compose.yml",
+    "backend/services/site_service.py",
+    "backend/services/container_service.py",
+    "backend/utils/docker.py",
+    "backend/tests/conftest.py"
+  ],
+  "depends_on": [],
+  "wave": 1,
+  "parallel_group": "wave1-c",
+  "execution_group": null,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "docker-compose.yml does not contain \"/var/run/docker.sock:/var/run/docker.sock\" under main-service",
+      "docker-compose.yml does not contain \"/var/run/docker.sock:/var/run/docker.sock\" under celery-worker",
+      "backend/services/site_service.py does not contain \"[\"sh\", \"-lc\", start_command]\"",
+      "backend/services/site_service.py contains \"shlex.split(start_command)\"",
+      "backend/services/site_service.py contains \"Invalid start_command\"",
+      "pytest backend/tests/test_runtime_isolation.py -q exits 0"
+    ],
+    "verification": "Run pytest backend/tests/test_runtime_isolation.py -q",
+    "definition_of_done": "Key runtime paths no longer rely on host Docker privileges by default and no longer execute site start commands through a shell."
+  },
+  "files": [
+    {
+      "path": "docker-compose.yml",
+      "action": "modify",
+      "target": "main-service and celery-worker volumes",
+      "change": "Remove the docker.sock bind mount from both default services."
+    },
+    {
+      "path": "backend/services/site_service.py",
+      "action": "modify",
+      "target": "_build_site_start_command",
+      "change": "Validate start_command, reject shell metacharacters, and run the validated argv via shlex.split() instead of sh -lc."
+    },
+    {
+      "path": "backend/tests/test_runtime_isolation.py",
+      "action": "create",
+      "target": "runtime isolation tests",
+      "change": "Add tests for invalid start_command rejection and for the non-shell startup path."
+    }
+  ],
+  "implementation": [
+    "Delete the docker.sock bind mount from main-service and celery-worker in docker-compose.yml so host Docker access is not granted by default.",
+    "Introduce a start_command validator in site_service that rejects shell metacharacters ;, &&, ||, |, `, $(), >, and < at the API/runtime boundary.",
+    "Use shlex.split(start_command) for validated custom startup commands and keep the existing uvicorn argv path when start_command is absent.",
+    "Add pytest coverage that rejects dangerous shell-like start commands and accepts a simple argv-style command."
+  ],
+  "test": {
+    "commands": [
+      "pytest backend/tests/test_runtime_isolation.py -q"
+    ],
+    "unit": [
+      "backend/tests/test_runtime_isolation.py::test_invalid_start_command_is_rejected",
+      "backend/tests/test_runtime_isolation.py::test_valid_start_command_is_split_without_shell"
+    ],
+    "integration": [],
+    "success_metrics": [
+      "No default docker.sock mount for app/worker",
+      "Custom start_command uses argv execution instead of shell evaluation"
+    ]
+  },
+  "reference": {
+    "pattern": "Safe path resolution and boundary validation in site_service",
+    "files": [
+      "backend/services/site_service.py"
+    ],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "Removing default host privileges and shell evaluation directly addresses the highest-isolation risks with minimal topology change.",
+    "decision_factors": [
+      "docker.sock is mounted by default today",
+      "site start_command currently uses sh -lc",
+      "phase goal explicitly requires clearer isolation boundaries"
+    ],
+    "tradeoffs": "Some previously permissive shell-style start commands will be rejected and must be rewritten as argv-safe commands."
+  },
+  "risks": [
+    "Do not break the default uvicorn startup path for generated sites."
+  ],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": [
+      "Site runtime startup",
+      "Container privilege model"
+    ],
+    "affected_components": [
+      "compose runtime",
+      "site service"
+    ],
+    "affected_requirements": [
+      "REQ-003"
+    ],
+    "adr_ids": []
+  },
+  "meta": {
+    "estimated_time": "0.75 day",
+    "risk": "high",
+    "autonomous": true,
+    "checkpoint": false
+  }
+}

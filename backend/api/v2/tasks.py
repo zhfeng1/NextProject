@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.deps import get_current_user, get_db
+from backend.api.deps import get_current_user, get_db, require_role
 from backend.services.task_service import task_service
 
 router = APIRouter(prefix="/tasks")
@@ -58,10 +58,23 @@ async def get_task_logs(
     return {"ok": True, "logs": logs, "next_after_id": next_after_id}
 
 
+@router.get("/{task_id}/provider-output")
+async def get_task_provider_output(
+    task_id: str,
+    response: Response,
+    current_user: object = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    data = await task_service.get_task_provider_output(db, task_id, current_user)
+    return {"ok": True, **data}
+
+
 @router.post("/{task_id}/cancel")
 async def cancel_task(
     task_id: str,
-    current_user: object = Depends(get_current_user),
+    current_user: object = Depends(require_role("developer")),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     task = await task_service.cancel_task(db, task_id, current_user)
@@ -71,7 +84,7 @@ async def cancel_task(
 @router.delete("/{task_id}")
 async def delete_task(
     task_id: str,
-    current_user: object = Depends(get_current_user),
+    current_user: object = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     await task_service.delete_task(db, task_id, current_user)

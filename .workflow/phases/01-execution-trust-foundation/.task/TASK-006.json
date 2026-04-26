@@ -1,0 +1,176 @@
+{
+  "id": "TASK-006",
+  "title": "Make develop/deploy terminal outcomes and trust metrics reflect real preview readiness",
+  "description": "Use snapshots, preview-readiness checks, and Prometheus metrics so develop/deploy tasks only end in success when the updated site is actually restartable and observable.",
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "feature",
+  "priority": "high",
+  "effort": "high",
+  "action": "In backend/services/task_service.py, create a pre-task snapshot for develop_code with commit_message set to f\"Pre-task snapshot for {task.id}\" and persist pre_task_version in the task result; add a helper named _verify_preview_ready() that performs HTTP GET to http://127.0.0.1:{site.port}/ with timeout=2 seconds, max_attempts=10, and sleep_seconds=1 after site_service.restart_site() for both develop_code and deploy_local; treat any 2xx or 3xx response as preview_ready=true and any timeout, connection error, or final 5xx/4xx result after all retries as preview_ready=false; set TaskStatus.FAILED instead of TaskStatus.SUCCESS when restart or readiness verification fails; when develop_code completes successfully, create a post-task snapshot and store post_task_version in the final result; in backend/core/metrics.py, add Prometheus counters task_terminal_total{task_type,status}, preview_restart_fail_total, and site_rollbacks_total{outcome}; increment them from backend/services/task_service.py and backend/services/version_service.py.",
+  "status": "pending",
+  "completed_at": null,
+  "actual_duration": null,
+  "scope": "task truth + monitoring",
+  "focus_paths": [
+    "backend/services/task_service.py",
+    "backend/tasks/develop_code.py",
+    "backend/tasks/deploy.py",
+    "backend/services/site_service.py",
+    "backend/services/version_service.py",
+    "backend/core/metrics.py",
+    "backend/tests/test_task_truth.py",
+    "backend/tests/test_metrics.py"
+  ],
+  "read_first": [
+    "backend/services/task_service.py",
+    "backend/tasks/develop_code.py",
+    "backend/tasks/deploy.py",
+    "backend/services/site_service.py",
+    "backend/services/version_service.py",
+    "backend/core/metrics.py",
+    "backend/main.py",
+    "backend/tests/conftest.py"
+  ],
+  "depends_on": [
+    "TASK-001",
+    "TASK-004",
+    "TASK-005"
+  ],
+  "wave": 3,
+  "parallel_group": null,
+  "execution_group": null,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "backend/services/task_service.py contains \"def _verify_preview_ready(\"",
+      "backend/services/task_service.py contains \"timeout=2\"",
+      "backend/services/task_service.py contains \"max_attempts = 10\"",
+      "backend/services/task_service.py contains \"sleep_seconds = 1\"",
+      "backend/services/task_service.py contains \"pre_task_version\"",
+      "backend/services/task_service.py contains \"post_task_version\"",
+      "backend/services/task_service.py contains \"preview_ready\"",
+      "backend/tasks/deploy.py contains \"TaskStatus.FAILED\"",
+      "backend/core/metrics.py contains \"task_terminal_total\"",
+      "backend/core/metrics.py contains \"preview_restart_fail_total\"",
+      "backend/core/metrics.py contains \"site_rollbacks_total\"",
+      "backend/tests/test_task_truth.py contains \"test_develop_task_fails_when_preview_not_ready\"",
+      "backend/tests/test_task_truth.py contains \"test_deploy_task_fails_when_preview_not_ready\"",
+      "backend/tests/test_metrics.py contains \"test_task_terminal_total_increments\"",
+      "backend/tests/test_metrics.py contains \"test_site_rollbacks_total_increments\"",
+      "pytest backend/tests/test_task_truth.py backend/tests/test_metrics.py -q exits 0"
+    ],
+    "verification": "Run pytest backend/tests/test_task_truth.py backend/tests/test_metrics.py -q",
+    "definition_of_done": "Develop and deploy tasks only end in success when preview restart and readiness checks pass, and trust-related terminal outcomes are exported as metrics."
+  },
+  "files": [
+    {
+      "path": "backend/services/task_service.py",
+      "action": "modify",
+      "target": "_run_develop_task_for_provider and update_status paths",
+      "change": "Create pre/post snapshots, verify preview readiness, and fail terminal state when restart or readiness verification fails."
+    },
+    {
+      "path": "backend/tasks/deploy.py",
+      "action": "modify",
+      "target": "deploy_task",
+      "change": "Verify preview readiness after restart_site() and fail instead of reporting success when readiness does not pass."
+    },
+    {
+      "path": "backend/services/version_service.py",
+      "action": "modify",
+      "target": "snapshot/rollback counters",
+      "change": "Increment site_rollbacks_total outcome counters from rollback success/failure paths."
+    },
+    {
+      "path": "backend/core/metrics.py",
+      "action": "modify",
+      "target": "prometheus metrics definitions",
+      "change": "Add task_terminal_total, preview_restart_fail_total, and site_rollbacks_total counters."
+    },
+    {
+      "path": "backend/tests/test_task_truth.py",
+      "action": "create",
+      "target": "task truth tests",
+      "change": "Add develop/deploy tests that assert failed preview readiness produces FAILED status and snapshot lineage in task results."
+    },
+    {
+      "path": "backend/tests/test_metrics.py",
+      "action": "create",
+      "target": "metrics tests",
+      "change": "Add metrics assertions for new trust counters with the existing Prometheus test reset fixture."
+    }
+  ],
+  "implementation": [
+    "Before running provider execution for develop_code, call version_service.create_snapshot() with commit_message f\"Pre-task snapshot for {task.id}\" and record the returned version number/id in the task result as pre_task_version.",
+    "Add _verify_preview_ready(site: Site) to backend/services/task_service.py and make it perform HTTP GET to http://127.0.0.1:{site.port}/ with timeout=2 seconds, max_attempts=10, and sleep_seconds=1.",
+    "Treat any 2xx or 3xx HTTP response from _verify_preview_ready() as preview_ready=true; treat timeout, connection error, or a final 4xx/5xx result after all retries as preview_ready=false.",
+    "Replace unconditional TaskStatus.SUCCESS writes in develop_code and deploy_local flows with branches that persist FAILED plus structured preview_restart/preview_ready errors when readiness does not pass.",
+    "After a successful develop_code run, create a second snapshot and record post_task_version in the final task result.",
+    "Define and increment task_terminal_total{task_type,status}, preview_restart_fail_total, and site_rollbacks_total{outcome}; add explicit pytest coverage that asserts counter increments for failed preview readiness and rollback outcomes."
+  ],
+  "test": {
+    "commands": [
+      "pytest backend/tests/test_task_truth.py backend/tests/test_metrics.py -q"
+    ],
+    "unit": [
+      "backend/tests/test_task_truth.py::test_develop_task_fails_when_preview_not_ready",
+      "backend/tests/test_task_truth.py::test_deploy_task_fails_when_preview_not_ready",
+      "backend/tests/test_task_truth.py::test_develop_task_records_pre_and_post_snapshot_versions",
+      "backend/tests/test_metrics.py::test_task_terminal_total_increments",
+      "backend/tests/test_metrics.py::test_site_rollbacks_total_increments"
+    ],
+    "integration": [],
+    "success_metrics": [
+      "FAILED status on preview readiness failure for develop_code and deploy_local",
+      "Task result includes pre_task_version/post_task_version",
+      "task_terminal_total and site_rollbacks_total increment in targeted metric tests"
+    ]
+  },
+  "reference": {
+    "pattern": "Current task status updates and metrics exposure already exist",
+    "files": [
+      "backend/services/task_service.py",
+      "backend/tasks/deploy.py",
+      "backend/core/metrics.py",
+      "backend/main.py"
+    ],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "This makes task truth and monitoring converge on the same real signals instead of layering a new workflow abstraction on top.",
+    "decision_factors": [
+      "preview restart currently does not gate success",
+      "metrics.py is already wired into /metrics",
+      "snapshot/rollback is already part of the product promise"
+    ],
+    "tradeoffs": "Task completion may become stricter and expose more failures, but those failures are exactly what phase 1 is supposed to surface truthfully."
+  },
+  "risks": [
+    "Do not leave partially written task results when preview verification fails after provider execution succeeds."
+  ],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": [
+      "Develop tasks",
+      "Deploy tasks",
+      "Metrics",
+      "Rollback lineage"
+    ],
+    "affected_components": [
+      "task service",
+      "deploy task",
+      "metrics"
+    ],
+    "affected_requirements": [
+      "REQ-003"
+    ],
+    "adr_ids": []
+  },
+  "meta": {
+    "estimated_time": "1.0 day",
+    "risk": "high",
+    "autonomous": true,
+    "checkpoint": true
+  }
+}

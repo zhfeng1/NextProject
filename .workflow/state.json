@@ -1,0 +1,56 @@
+{
+  "version": "1.0",
+  "project_name": "NextProject",
+  "current_milestone": "Roadmap Definition",
+  "current_phase": 1,
+  "status": "idle",
+  "phases_summary": {
+    "total": 2,
+    "completed": 0,
+    "in_progress": 0,
+    "pending": 2
+  },
+  "last_updated": "2026-04-20T07:50:44Z",
+  "accumulated_context": {
+    "key_decisions": [
+      "Brownfield incremental evolution over rewrite",
+      "Quality-controlled speed over raw generation speed",
+      "Optimize usability for programmers, project managers, and ordinary users"
+    ],
+    "blockers": [],
+    "deferred": []
+  },
+  "transition_history": [
+    {
+      "at": "2026-04-20T06:21:26Z",
+      "event": "workflow_initialized",
+      "status": "idle",
+      "note": "Initialized from brownfield codebase before roadmap creation"
+    }
+  ],
+  "milestone_history": [
+    {
+      "name": "Roadmap Definition",
+      "slug": "roadmap-definition",
+      "status": "pending",
+      "completed_at": null,
+      "phases": [
+        {
+          "number": 1,
+          "slug": "execution-trust-foundation",
+          "title": "Execution Trust Foundation",
+          "status": "pending"
+        },
+        {
+          "number": 2,
+          "slug": "workflow-and-usability-convergence",
+          "title": "Workflow and Usability Convergence",
+          "status": "pending"
+        }
+      ],
+      "audit_verdict": null,
+      "force_completed": false,
+      "archive_path": null
+    }
+  ]
+}

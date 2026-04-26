@@ -1,0 +1,143 @@
+{
+  "id": "TASK-001",
+  "title": "Persist Celery execution identity across task lifecycle",
+  "description": "Persist the dispatched Celery job id for every queued task, expose it through task serialization, and make cancel/reconcile paths use the same durable execution identity.",
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "fix",
+  "priority": "high",
+  "effort": "medium",
+  "action": "In backend/services/task_service.py, change enqueue_task() so each .delay(str(task.id)) call stores the returned AsyncResult.id into AgentTask.celery_task_id; in backend/tasks/develop_code.py, backend/tasks/deploy.py, and backend/tasks/test.py, persist self.request.id when worker execution starts if celery_task_id is empty; in serialize_task(), include celery_task_id in the returned payload; in cancel_task(), log and revoke the persisted celery_task_id value instead of relying on an empty field.",
+  "status": "pending",
+  "completed_at": null,
+  "actual_duration": null,
+  "scope": "backend/tasks + backend/services/task_service.py",
+  "focus_paths": [
+    "backend/services/task_service.py",
+    "backend/tasks/develop_code.py",
+    "backend/tasks/deploy.py",
+    "backend/tasks/test.py",
+    "backend/tests/test_task_lifecycle.py"
+  ],
+  "read_first": [
+    "backend/services/task_service.py",
+    "backend/tasks/develop_code.py",
+    "backend/tasks/deploy.py",
+    "backend/tasks/test.py",
+    "backend/tasks/_helpers.py",
+    "backend/models/task.py",
+    "backend/tests/conftest.py"
+  ],
+  "depends_on": [],
+  "wave": 1,
+  "parallel_group": "wave1-a",
+  "execution_group": null,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "backend/services/task_service.py contains \"job = develop_code_task.delay(str(task.id))\"",
+      "backend/services/task_service.py contains \"task.celery_task_id = job.id\"",
+      "backend/tasks/develop_code.py contains \"self.request.id\"",
+      "backend/tasks/deploy.py contains \"self.request.id\"",
+      "backend/tasks/test.py contains \"self.request.id\"",
+      "backend/services/task_service.py contains \"\"celery_task_id\":\"",
+      "pytest backend/tests/test_task_lifecycle.py -q exits 0"
+    ],
+    "verification": "Run pytest backend/tests/test_task_lifecycle.py -q",
+    "definition_of_done": "Queued, running, and canceled tasks all refer to the same persisted Celery execution id."
+  },
+  "files": [
+    {
+      "path": "backend/services/task_service.py",
+      "action": "modify",
+      "target": "enqueue_task, serialize_task, cancel_task",
+      "change": "Store AsyncResult.id in celery_task_id, surface it in serialized task data, and use it in revoke/log flows."
+    },
+    {
+      "path": "backend/tasks/develop_code.py",
+      "action": "modify",
+      "target": "develop_code_task",
+      "change": "Persist self.request.id into the AgentTask row before running task_service.run_develop_task()."
+    },
+    {
+      "path": "backend/tasks/deploy.py",
+      "action": "modify",
+      "target": "deploy_task",
+      "change": "Persist self.request.id into the AgentTask row before calling update_status(TaskStatus.RUNNING)."
+    },
+    {
+      "path": "backend/tasks/test.py",
+      "action": "modify",
+      "target": "smoke_test_task",
+      "change": "Persist self.request.id into the AgentTask row before running task_service.run_playwright_smoke_task()."
+    },
+    {
+      "path": "backend/tests/test_task_lifecycle.py",
+      "action": "create",
+      "target": "task lifecycle tests",
+      "change": "Add enqueue/cancel coverage that asserts celery_task_id is persisted and used for cancel/revoke paths."
+    }
+  ],
+  "implementation": [
+    "Refactor enqueue_task() to capture the AsyncResult object returned by develop_code_task.delay(), deploy_task.delay(), and smoke_test_task.delay().",
+    "Open an async session in enqueue_task() or route the persistence through an async helper so AgentTask.celery_task_id is committed immediately after dispatch.",
+    "At the beginning of each Celery task entrypoint, persist self.request.id if the task row still has an empty celery_task_id.",
+    "Extend serialize_task() to include celery_task_id so APIs and logs can use the same durable execution identity.",
+    "Add pytest coverage in backend/tests/test_task_lifecycle.py for enqueue persistence and cancellation against the stored celery_task_id."
+  ],
+  "test": {
+    "commands": [
+      "pytest backend/tests/test_task_lifecycle.py -q"
+    ],
+    "unit": [
+      "backend/tests/test_task_lifecycle.py::test_enqueue_persists_celery_task_id",
+      "backend/tests/test_task_lifecycle.py::test_cancel_uses_persisted_celery_task_id"
+    ],
+    "integration": [],
+    "success_metrics": [
+      "Persisted celery_task_id is non-empty after enqueue",
+      "Cancel path revokes the stored id and logs the cancellation request"
+    ]
+  },
+  "reference": {
+    "pattern": "Fresh async DB session usage inside Celery workers",
+    "files": [
+      "backend/tasks/_helpers.py",
+      "backend/api/v2/tasks.py"
+    ],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "This is the smallest durable fix that aligns task dispatch, worker execution, and cancel paths without changing queue topology.",
+    "decision_factors": [
+      "AgentTask already has a celery_task_id column",
+      "cancel_task() already expects a persisted Celery id",
+      "worker entrypoints already own the real execution boundary"
+    ],
+    "tradeoffs": "Requires a small async persistence helper in a synchronous enqueue path, but avoids hidden in-memory state."
+  },
+  "risks": [
+    "Do not block enqueue on long database work; persist only the Celery id and reuse existing session helpers."
+  ],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": [
+      "Task lifecycle",
+      "Task cancellation"
+    ],
+    "affected_components": [
+      "backend task runner",
+      "task APIs"
+    ],
+    "affected_requirements": [
+      "REQ-003"
+    ],
+    "adr_ids": []
+  },
+  "meta": {
+    "estimated_time": "0.5 day",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false
+  }
+}

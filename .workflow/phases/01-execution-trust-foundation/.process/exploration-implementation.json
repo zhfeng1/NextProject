@@ -1,0 +1,20 @@
+{
+  "angle": "implementation",
+  "status": "completed",
+  "summary": "The smallest viable decomposition is to first persist execution identity and access control primitives, then make status/result propagation and metrics reflect those primitives.",
+  "findings": [
+    "enqueue_task() dispatches Celery jobs but does not persist celery_task_id even though AgentTask has a celery_task_id column.",
+    "run_develop_task() marks SUCCESS even when preview restart fails, and deploy_task() marks SUCCESS immediately after restart_site().",
+    "task_logs_websocket() accepts any task id and replays logs without auth or ownership checks.",
+    "version_service.rollback_to_version() destroys the live root and untars directly without checksum or staging validation.",
+    "useTaskLogs.ts builds a raw websocket URL today, so authenticated websocket access needs an explicit token transport."
+  ],
+  "hotspots": [
+    "backend/tasks/develop_code.py",
+    "backend/tasks/deploy.py",
+    "backend/tasks/test.py",
+    "backend/api/v2/websocket.py",
+    "frontend/src/composables/useTaskLogs.ts"
+  ],
+  "clarification_needs": []
+}

@@ -28,6 +28,15 @@ export interface Task {
   created_at: string
   started_at: string | null
   finished_at: string | null
+  result?: Record<string, unknown>
+}
+
+export interface TaskProviderOutput {
+  task_id: string
+  provider: string
+  available: boolean
+  content: string
+  truncated: boolean
 }
 
 export const tasksAPI = {
@@ -50,6 +59,18 @@ export const tasksAPI = {
   getLogs(taskId: string, afterId = 0) {
     return client.get<any, { ok: boolean; logs: TaskLog[] }>(
       `/tasks/${taskId}/logs?after_id=${afterId}&limit=500&_ts=${Date.now()}`,
+      {
+        headers: {
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+        },
+      },
+    )
+  },
+
+  getProviderOutput(taskId: string) {
+    return client.get<any, { ok: boolean } & TaskProviderOutput>(
+      `/tasks/${taskId}/provider-output?_ts=${Date.now()}`,
       {
         headers: {
           'Cache-Control': 'no-cache',

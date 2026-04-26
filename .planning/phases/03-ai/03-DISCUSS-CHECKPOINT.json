@@ -1,0 +1,21 @@
+{
+  "phase": "3",
+  "phase_name": "AI 编码引擎",
+  "timestamp": "2026-04-27T10:00:00Z",
+  "areas_completed": ["需求拆解策略"],
+  "areas_remaining": ["子任务编排与执行", "对话式编码交互", "Diff 展示与日志"],
+  "decisions": {
+    "需求拆解策略": [
+      {"question": "LLM 如何将用户的自然语言需求拆解为子任务？", "answer": "融入 GSD 流程：支持快速模式（一句话直接拆解+执行）和完整工作流模式（discuss→plan→execute）", "options_presented": ["一次性拆解", "两步拆解", "你决定"]},
+      {"question": "GSD 流程融合的深度是怎样的？", "answer": "完整的要有，精简的也要有，支持用户一句话需求，也支持用户使用完整工作流", "options_presented": ["精简三步流", "完整 GSD 流程", "简化两步"]},
+      {"question": "PROJ-06 跨仓库感知", "answer": "目录感知 + 仓库标记：AI 获取项目下所有仓库的目录结构，拆解时将子任务标记到对应仓库", "options_presented": ["目录感知 + 仓库标记", "用户手动指定仓库", "你决定"]},
+      {"question": "子任务的数据模型如何设计？", "answer": "Claude's Discretion", "options_presented": ["扩展 AgentTask", "新建 Subtask 表", "你决定"]},
+      {"question": "快速模式和完整工作流之间如何切换？", "answer": "手动切换：用户在需求输入时选择模式", "options_presented": ["手动切换", "智能判断", "默认快速 + 升级"]},
+      {"question": "完整工作流的 Discuss 步骤中展示形式", "answer": "理解确认卡片：AI 分析需求 + 代码库后展示涉及仓库、影响文件、潜在风险", "options_presented": ["理解确认卡片", "对话式追问", "你决定"]},
+      {"question": "Plan 步骤中用户的控制权", "answer": "可编辑子任务列表：用户可重新排序、删除、修改子任务描述", "options_presented": ["可编辑子任务列表", "确认/重新生成", "你决定"]},
+      {"question": "子任务展示信息", "answer": "结构化子任务卡片：名称、描述、目标仓库、涉及文件、依赖关系", "options_presented": ["结构化子任务卡片", "简化列表", "你决定"]}
+    ]
+  },
+  "deferred_ideas": [],
+  "canonical_refs": []
+}

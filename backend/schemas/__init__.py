@@ -1,4 +1,5 @@
 from backend.schemas.auth import TokenResponse, UserLoginRequest, UserRegisterRequest, UserResponse
+from backend.schemas.conversation import ConversationCreate, ConversationResponse, MessageCreate, MessageResponse
 from backend.schemas.site import (
     AppConfigPayload,
     CreateSiteRequest,
@@ -12,6 +13,10 @@ from backend.schemas.version import VersionCreateRequest, VersionResponse
 
 __all__ = [
     "AppConfigPayload",
+    "ConversationCreate",
+    "ConversationResponse",
+    "MessageCreate",
+    "MessageResponse",
     "CreateSiteRequest",
     "SiteDeployConfigPayload",
     "SiteProviderConfigPayload",

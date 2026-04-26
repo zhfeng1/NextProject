@@ -1,0 +1,99 @@
+{
+  "phase": 1,
+  "slug": "execution-trust-foundation",
+  "title": "Execution Trust Foundation",
+  "milestone": "Roadmap Definition",
+  "status": "planning",
+  "created_at": "2026-04-20T08:21:30Z",
+  "updated_at": "2026-04-20T08:21:30Z",
+  "completed_at": null,
+  "force_transition": false,
+  "depends_on": [],
+  "goal": "建立可信的任务执行、运行时隔离、版本恢复与监控基础，让平台先具备结果可信、失败可诊断、问题可回滚的底座。",
+  "success_criteria": [
+    "任务执行结果能够真实反映预览重启、部署与关键后处理是否成功，失败不会再以成功态误导用户。",
+    "子站点运行与任务执行具备更明确的隔离边界，关键高风险路径不再默认依赖宿主级权限。",
+    "版本快照、回滚与基础监控成为可依赖能力，出现异常时可以定位、恢复并给出清晰状态。"
+  ],
+  "requirements": [
+    "REQ-003 强化平台可靠性与隔离能力，包括容器化子站点、版本回滚、监控告警和更稳定的任务执行能力"
+  ],
+  "spec_ref": null,
+  "session_id": null,
+  "recommendation": "Plan generated from roadmap + phase explorations; execute wave-by-wave with verification after each wave.",
+  "confidence": "high",
+  "analysis_at": "2026-04-20T08:21:30Z",
+  "planning_at": "2026-04-20T08:21:30Z",
+  "plan": {
+    "task_ids": [
+      "TASK-001",
+      "TASK-002",
+      "TASK-003",
+      "TASK-004",
+      "TASK-005",
+      "TASK-006"
+    ],
+    "task_count": 6,
+    "complexity": "high",
+    "waves": [
+      {
+        "wave": 1,
+        "tasks": [
+          "TASK-001",
+          "TASK-002",
+          "TASK-003",
+          "TASK-004"
+        ]
+      },
+      {
+        "wave": 2,
+        "tasks": [
+          "TASK-005"
+        ]
+      },
+      {
+        "wave": 3,
+        "tasks": [
+          "TASK-006"
+        ]
+      }
+    ],
+    "executor_assignments": {}
+  },
+  "execution": {
+    "method": "agent",
+    "started_at": null,
+    "completed_at": null,
+    "tasks_completed": 0,
+    "tasks_total": 6,
+    "current_wave": 0,
+    "commits": []
+  },
+  "verification": {
+    "status": "pending",
+    "verified_at": null,
+    "must_haves": [
+      "Legacy risky routes require auth and do not leak secrets.",
+      "Task websocket access is authenticated and ownership-checked.",
+      "Develop/deploy success states only happen after restart/readiness checks pass.",
+      "Rollback validates archive integrity before replacing the live site.",
+      "Trust-related metrics are exposed through /metrics."
+    ],
+    "gaps": []
+  },
+  "validation": {
+    "status": "pending",
+    "test_coverage": null,
+    "gaps": []
+  },
+  "uat": {
+    "status": "pending",
+    "test_count": 0,
+    "passed": 0,
+    "gaps": []
+  },
+  "reflection": {
+    "rounds": 0,
+    "strategy_adjustments": []
+  }
+}

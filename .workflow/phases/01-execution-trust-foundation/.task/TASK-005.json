@@ -1,0 +1,157 @@
+{
+  "id": "TASK-005",
+  "title": "Authenticate websocket task logs and publish richer task status events",
+  "description": "Protect websocket log access with task ownership checks and make status frames carry enough data for the UI to show truthful terminal outcomes.",
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "feature",
+  "priority": "high",
+  "effort": "medium",
+  "action": "In backend/api/v2/websocket.py, require a token query parameter on /ws/tasks/{task_id}/logs, decode it with backend/core/security.py access-token rules, and call task_service.get_task() before websocket_manager.connect(); in backend/services/task_service.py, publish status websocket payloads with task_id, status, result, error, and finished_at; in frontend/src/composables/useTaskLogs.ts, frontend/src/views/Sites/SiteEditor.vue, and frontend/src/views/Tasks/TaskList.vue, append token=encodeURIComponent(localStorage.getItem(\"access_token\") || \"\") to websocket URLs and consume richer status payloads where applicable; keep the route path /ws/tasks/{task_id}/logs unchanged.",
+  "status": "pending",
+  "completed_at": null,
+  "actual_duration": null,
+  "scope": "websocket auth and task status propagation",
+  "focus_paths": [
+    "backend/api/v2/websocket.py",
+    "backend/services/task_service.py",
+    "backend/services/websocket_service.py",
+    "frontend/src/composables/useTaskLogs.ts",
+    "frontend/src/views/Sites/SiteEditor.vue",
+    "frontend/src/views/Tasks/TaskList.vue",
+    "backend/tests/test_websocket_auth.py"
+  ],
+  "read_first": [
+    "backend/api/v2/websocket.py",
+    "backend/core/security.py",
+    "backend/services/task_service.py",
+    "backend/services/websocket_service.py",
+    "frontend/src/composables/useTaskLogs.ts",
+    "frontend/src/views/Sites/SiteEditor.vue",
+    "frontend/src/views/Tasks/TaskList.vue",
+    "backend/tests/conftest.py"
+  ],
+  "depends_on": [
+    "TASK-001"
+  ],
+  "wave": 2,
+  "parallel_group": null,
+  "execution_group": null,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "backend/api/v2/websocket.py contains \"token: str = Query(\"",
+      "backend/api/v2/websocket.py contains \"decode_token(token)\"",
+      "backend/api/v2/websocket.py contains \"await task_service.get_task(db, task_id, current_user)\"",
+      "backend/services/task_service.py contains \"\"result\":\"",
+      "backend/services/task_service.py contains \"\"error\":\"",
+      "frontend/src/composables/useTaskLogs.ts contains \"token=${encodeURIComponent(token)}\"",
+      "frontend/src/views/Sites/SiteEditor.vue contains \"token=${encodeURIComponent(token)}\"",
+      "frontend/src/views/Tasks/TaskList.vue contains \"token=${encodeURIComponent(token)}\"",
+      "pytest backend/tests/test_websocket_auth.py -q exits 0"
+    ],
+    "verification": "Run pytest backend/tests/test_websocket_auth.py -q",
+    "definition_of_done": "Only an authenticated owner can open task log websockets, and status frames include the task result/error needed by the UI."
+  },
+  "files": [
+    {
+      "path": "backend/api/v2/websocket.py",
+      "action": "modify",
+      "target": "task_logs_websocket",
+      "change": "Decode an access token from the websocket query string and authorize task access before connecting."
+    },
+    {
+      "path": "backend/services/task_service.py",
+      "action": "modify",
+      "target": "update_status",
+      "change": "Publish task_id, status, result, error, and finished_at in the websocket status payload."
+    },
+    {
+      "path": "frontend/src/composables/useTaskLogs.ts",
+      "action": "modify",
+      "target": "buildWsUrl and onmessage",
+      "change": "Append the stored access token to the websocket URL and consume result/error fields from status frames."
+    },
+    {
+      "path": "frontend/src/views/Sites/SiteEditor.vue",
+      "action": "modify",
+      "target": "connectTaskWS",
+      "change": "Append the stored access token to the direct websocket URL used for task logs and preserve the existing after_id replay behavior."
+    },
+    {
+      "path": "frontend/src/views/Tasks/TaskList.vue",
+      "action": "modify",
+      "target": "selectTask",
+      "change": "Append the stored access token to the direct websocket URL used for queued/running task log streaming."
+    },
+    {
+      "path": "backend/tests/test_websocket_auth.py",
+      "action": "create",
+      "target": "websocket auth tests",
+      "change": "Add websocket tests for unauthorized access denial and authorized log replay."
+    }
+  ],
+  "implementation": [
+    "Add a small websocket token parsing path that accepts token from the query string and validates it with decode_token() and the existing user lookup rules.",
+    "Authorize websocket access by calling task_service.get_task() before accepting the connection so task ownership matches the REST APIs.",
+    "Extend task_service.update_status() websocket publication to include result, error, and finished_at fields in addition to status.",
+    "Update frontend/src/composables/useTaskLogs.ts to append access_token from localStorage to the websocket URL and preserve reconnect behavior.",
+    "Update frontend/src/views/Sites/SiteEditor.vue and frontend/src/views/Tasks/TaskList.vue so both direct WebSocket callers append the same token query parameter.",
+    "Add pytest websocket coverage for unauthorized rejection and authorized history replay."
+  ],
+  "test": {
+    "commands": [
+      "pytest backend/tests/test_websocket_auth.py -q"
+    ],
+    "unit": [
+      "backend/tests/test_websocket_auth.py::test_task_logs_websocket_requires_token",
+      "backend/tests/test_websocket_auth.py::test_task_logs_websocket_replays_logs_for_owner"
+    ],
+    "integration": [],
+    "success_metrics": [
+      "Unauthorized websocket access is rejected",
+      "Authorized websocket status frames include result/error fields"
+    ]
+  },
+  "reference": {
+    "pattern": "Authenticated REST task access already uses task_service.get_task()",
+    "files": [
+      "backend/api/v2/tasks.py",
+      "backend/core/security.py"
+    ],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "This reuses the existing JWT and task ownership logic and keeps the websocket route stable for the frontend.",
+    "decision_factors": [
+      "Browsers cannot set arbitrary Authorization headers on WebSocket easily",
+      "REST task routes already have correct ownership checks",
+      "UI needs more than bare status strings to show truthful terminal state"
+    ],
+    "tradeoffs": "The websocket URL now carries a short-lived access token in the query string, but only over the existing same-origin channel."
+  },
+  "risks": [
+    "Avoid calling websocket_manager.connect() before authorization succeeds."
+  ],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": [
+      "Task logs",
+      "Realtime task status"
+    ],
+    "affected_components": [
+      "websocket api",
+      "task log composable"
+    ],
+    "affected_requirements": [
+      "REQ-003"
+    ],
+    "adr_ids": []
+  },
+  "meta": {
+    "estimated_time": "0.75 day",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false
+  }
+}
