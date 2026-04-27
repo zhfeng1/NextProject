@@ -5,6 +5,8 @@ import { useProjectStore } from '@/stores/project'
 import { projectsAPI } from '@/api/projects'
 import RepoTabs from './components/RepoTabs.vue'
 import RepoFileTree from './components/RepoFileTree.vue'
+import { ArrowLeft } from 'lucide-vue-next'
+import { Button } from '@/components/ui/button'
 import type { Site } from '@/types/models'
 
 const route = useRoute()
@@ -108,6 +110,17 @@ const activeTabContent = computed(() => openTabs.value.find(t => t.id === active
 
 <template>
   <div class="flex flex-col h-full">
+    <!-- 顶部导航栏 -->
+    <div class="flex items-center gap-2 px-4 py-2 border-b bg-muted/30">
+      <Button variant="ghost" size="sm" @click="router.push(`/projects/${projectId}`)">
+        <ArrowLeft class="w-4 h-4 mr-1" />
+        返回项目
+      </Button>
+      <span class="text-sm font-medium" v-if="projectStore.currentProject">
+        {{ projectStore.currentProject.name }}
+      </span>
+    </div>
+
     <!-- 仓库 Tabs -->
     <RepoTabs
       :repos="repos"
