@@ -8,7 +8,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Plus, ArrowLeft, GitBranch, Code } from 'lucide-vue-next'
+import { Plus, ArrowLeft, GitBranch, Code, Trash2 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 
 const route = useRoute()
@@ -74,6 +74,16 @@ const handleAddRepo = async () => {
     addingRepo.value = false
   }
 }
+
+const handleDeleteRepo = async (repoId: string, repoName: string) => {
+  if (!confirm(`确认删除仓库「${repoName}」？此操作不可恢复。`)) return
+  try {
+    await projectStore.deleteRepo(projectId, repoId)
+    toast.success('仓库已删除')
+  } catch {
+    toast.error('删除仓库失败')
+  }
+}
 </script>
 
 <template>
@@ -114,6 +124,10 @@ const handleAddRepo = async () => {
             {{ repo.status }}
           </span>
           <p>创建于: {{ formatDate(repo.created_at) }}</p>
+          <Button variant="ghost" size="sm" class="text-destructive mt-2" @click.stop="handleDeleteRepo(repo.site_id, repo.name)">
+            <Trash2 class="w-4 h-4 mr-1" />
+            删除
+          </Button>
         </CardContent>
       </Card>
     </div>
@@ -129,8 +143,8 @@ const handleAddRepo = async () => {
         </DialogHeader>
         <div class="space-y-4">
           <div>
-            <Label>仓库名称</Label>
-            <Input v-model="addRepoForm.name" placeholder="输入仓库名称" />
+            <Label>仓库名称 <span class="text-destructive">*</span></Label>
+            <Input v-model="addRepoForm.name" placeholder="输入仓库名称" required />
           </div>
           <div>
             <Label>Git URL</Label>

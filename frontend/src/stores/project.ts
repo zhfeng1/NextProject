@@ -55,5 +55,12 @@ export const useProjectStore = defineStore('project', {
       }
       return response.repo
     },
+
+    async deleteRepo(projectId: string, repoId: string) {
+      await projectsAPI.deleteRepo(projectId, repoId)
+      if (this.currentProject?.id === projectId) {
+        await this.fetchProject(projectId)
+      }
+    },
   },
 })

@@ -213,13 +213,38 @@ class ProjectService:
             from backend.services.task_service import task_service
             task_service.enqueue_task(task)
         else:
-            # Blank repo: initialize at project grouped path
+            # Blank repo: create empty directory with git init (no template files)
             repo_path = self.repo_root(project_id, repo_name)
-            site_service.ensure_site_structure(site.site_id, override_root=repo_path)
+            repo_path.mkdir(parents=True, exist_ok=True)
+            import subprocess, shutil
+            git_bin = shutil.which("git")
+            if git_bin and not (repo_path / ".git").exists():
+                subprocess.run([git_bin, "init"], cwd=str(repo_path), capture_output=True)
             await db.commit()
 
         await db.refresh(site)
         return site
+
+    async def delete_repo(
+        self,
+        db: AsyncSession,
+        project_id: str,
+        repo_id: str,
+        current_user: object,
+    ) -> None:
+        """Delete a single repo from a project."""
+        project = await self.get_project(db, project_id, current_user)
+        from backend.services.site_service import site_service
+        site = await site_service.get_site_by_public_id(db, repo_id, current_user)
+        if str(site.project_id) != str(project_id):
+            raise HTTPException(status_code=404, detail="Repo not found in this project")
+        from datetime import datetime, timezone
+        site.deleted_at = datetime.now(timezone.utc)
+        await db.commit()
+        import shutil
+        repo_dir = self.repo_root(project_id, site.name)
+        if repo_dir.exists():
+            shutil.rmtree(repo_dir, ignore_errors=True)
 
 
 project_service = ProjectService()
