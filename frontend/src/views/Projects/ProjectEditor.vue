@@ -7,6 +7,7 @@ import RepoTabs from './components/RepoTabs.vue'
 import RepoFileTree from './components/RepoFileTree.vue'
 import { ArrowLeft } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
+import CodeEditor from '@/components/Editor/CodeEditor.vue'
 import type { Site } from '@/types/models'
 
 const route = useRoute()
@@ -156,12 +157,13 @@ const activeTabContent = computed(() => openTabs.value.find(t => t.id === active
         </div>
 
         <!-- Monaco 编辑器区域（只读） -->
-        <!-- [ISSUE-05] Monaco Editor 以 readOnly 模式渲染 -->
-        <!-- readOnly: true -->
         <div class="flex-1 overflow-hidden" v-if="activeTabContent">
-          <div class="p-4 text-sm font-mono whitespace-pre-wrap overflow-auto h-full">
-            {{ activeTabContent.content }}
-          </div>
+          <CodeEditor
+            :modelValue="activeTabContent.content"
+            :language="activeTabContent.language"
+            :readonly="true"
+            theme="vs-dark"
+          />
         </div>
         <div v-else class="flex-1 flex items-center justify-center text-muted-foreground">
           选择文件查看内容
