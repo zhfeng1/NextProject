@@ -221,5 +221,26 @@ class ProjectService:
         await db.refresh(site)
         return site
 
+    async def delete_repo(
+        self,
+        db: AsyncSession,
+        project_id: str,
+        repo_id: str,
+        current_user: object,
+    ) -> None:
+        """Delete a single repo from a project."""
+        project = await self.get_project(db, project_id, current_user)
+        from backend.services.site_service import site_service
+        site = await site_service.get_site_by_public_id(db, repo_id, current_user)
+        if str(site.project_id) != str(project_id):
+            raise HTTPException(status_code=404, detail="Repo not found in this project")
+        from datetime import datetime, timezone
+        site.deleted_at = datetime.now(timezone.utc)
+        await db.commit()
+        import shutil
+        repo_dir = self.repo_root(project_id, site.name)
+        if repo_dir.exists():
+            shutil.rmtree(repo_dir, ignore_errors=True)
+
 
 project_service = ProjectService()
