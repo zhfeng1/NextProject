@@ -26,6 +26,10 @@ export const projectsAPI = {
     return client.post<any, { ok: boolean; repo: Site }>(`/projects/${projectId}/repos`, data)
   },
 
+  deleteRepo(projectId: string, repoId: string) {
+    return client.delete<any, { ok: boolean }>(`/projects/${projectId}/repos/${repoId}`)
+  },
+
   listRepoFiles(projectId: string, repoId: string, path = '') {
     return client.get<any, {
       ok: boolean
