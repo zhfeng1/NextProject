@@ -213,9 +213,13 @@ class ProjectService:
             from backend.services.task_service import task_service
             task_service.enqueue_task(task)
         else:
-            # Blank repo: initialize at project grouped path
+            # Blank repo: create empty directory with git init (no template files)
             repo_path = self.repo_root(project_id, repo_name)
-            site_service.ensure_site_structure(site.site_id, override_root=repo_path)
+            repo_path.mkdir(parents=True, exist_ok=True)
+            import subprocess, shutil
+            git_bin = shutil.which("git")
+            if git_bin and not (repo_path / ".git").exists():
+                subprocess.run([git_bin, "init"], cwd=str(repo_path), capture_output=True)
             await db.commit()
 
         await db.refresh(site)
