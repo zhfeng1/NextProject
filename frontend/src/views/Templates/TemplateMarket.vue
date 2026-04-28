@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Users, Star } from 'lucide-vue-next'
+import { toast } from 'vue-sonner'
 
 const router = useRouter()
 
@@ -54,7 +55,7 @@ const useTemplate = (template: Template) => {
 
 const createFromTemplate = async () => {
   if (!siteName.value) {
-    alert('请输入站点名称')
+    toast.warning('请输入站点名称')
     return
   }
   if (!selectedTemplate.value) return
@@ -67,7 +68,7 @@ const createFromTemplate = async () => {
     showUseDialog.value = false
     router.push({ name: 'SiteEditor', params: { id: response.site.site_id } })
   } catch (error) {
-    alert('创建失败')
+    toast.error('创建失败，请稍后重试')
   }
 }
 </script>

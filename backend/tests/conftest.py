@@ -6,6 +6,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+import pytest_asyncio
 from prometheus_client import REGISTRY
 
 
@@ -23,7 +24,7 @@ def _reset_prometheus_registry() -> None:
             continue
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def app_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db_path = tmp_path / "test.db"
     shared_dir = tmp_path / "shared"
@@ -52,14 +53,14 @@ async def app_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return backend_main
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client(app_module):
     transport = httpx.ASGITransport(app=app_module.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def auth_headers(client: httpx.AsyncClient) -> dict[str, str]:
     email = "tester@example.com"
     password = "TesterPass123"

@@ -2,6 +2,7 @@
 import axios from 'axios'
 import type { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios'
 import { useAuthStore } from '@/stores/auth'
+import { toast } from 'vue-sonner'
 import router from '@/router'
 
 // 创建 Axios 实例
@@ -36,31 +37,37 @@ client.interceptors.response.use(
   (error) => {
     const { response } = error
 
+    const requestUrl = error.config?.url || ''
+    const isAuthEndpoint = requestUrl.includes('/auth/login') || requestUrl.includes('/auth/register')
+
     if (response) {
       switch (response.status) {
         case 401:
-          useAuthStore().logout()
-          router.replace('/')
+          if (!isAuthEndpoint) {
+            useAuthStore().logout()
+            toast.error('登录已过期，请重新登录')
+            router.replace('/login')
+          }
           break
         case 403:
-          // ElMessage.error('无权限访问')
-          alert('没有权限执行此操作')
+          toast.error('没有权限执行此操作')
           break
         case 404:
-          // ElMessage.error('请求的资源不存在')
-          alert('请求的资源不存在')
+          toast.error('请求的资源不存在')
+          break
+        case 422:
+          toast.error('请求参数有误，请检查输入')
           break
         case 500:
-          // ElMessage.error('服务器错误，请稍后重试')
-          alert('服务器内部错误')
+          toast.error('服务器内部错误，请稍后重试')
           break
-        default:
-          const message = response.data.detail || response.data.message || '请求失败';
-          // ElMessage.error(response.data.detail || response.data.message || '请求失败')
-          alert(`请求失败: ${message}`)
+        default: {
+          const message = response.data?.detail || response.data?.message || '请求失败'
+          toast.error(message)
+        }
       }
     } else {
-      console.warn('Network request failed without response', error)
+      toast.error('网络连接失败，请检查网络设置')
     }
 
     return Promise.reject(error)

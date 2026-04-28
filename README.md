@@ -37,7 +37,7 @@ docker compose up -d --build
   - 子网站增删查
   - 启动 / 停止
   - 进入站点编辑页
-- 站点编辑页（`/site-editor/{site_id}`）支持：
+- 站点编辑页（需先登录，访问路径：`/sites/{site_id}/edit`）支持：
   - 任务面板：开发任务（Codex/Claude/Gemini CLI）、Playwright 本地冒烟、部署任务（local/apollo）
   - 任务历史、任务日志查看、任务取消
   - Provider 命令配置、Apollo 部署配置维护

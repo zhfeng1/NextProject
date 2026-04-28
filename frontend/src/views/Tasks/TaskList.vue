@@ -8,6 +8,7 @@ import { Separator } from '@/components/ui/separator'
 import { sitesAPI } from '@/api/sites'
 import { tasksAPI } from '@/api/tasks'
 import type { Task, TaskLog } from '@/api/tasks'
+import { toast } from 'vue-sonner'
 
 const sites = ref<any[]>([])
 const allTasks = ref<Task[]>([])
@@ -97,7 +98,7 @@ async function removeTask(task: Task) {
       if (ws) { ws.close(); ws = null }
     }
   } catch (error: any) {
-    window.alert(error?.response?.data?.detail || '删除任务失败')
+    toast.error(error?.response?.data?.detail || '删除任务失败')
   } finally {
     deletingTaskId.value = ''
   }

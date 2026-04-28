@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Label } from '@/components/ui/label'
 import { MonitorPlay, Settings, Power, PowerOff, Trash2, Plus, Globe, FolderTree } from 'lucide-vue-next'
 import SiteFileBrowserDialog from '@/components/SiteFileBrowserDialog.vue'
+import { toast } from 'vue-sonner'
 
 const router = useRouter()
 const siteStore = useSiteStore()
@@ -80,9 +81,9 @@ const deleteSite = async (site: Site) => {
 }
 
 const createSite = async () => {
-  if (!createForm.value.name) return alert('请输入站点名称')
+  if (!createForm.value.name) return toast.warning('请输入站点名称')
   if (createForm.value.git_password && !createForm.value.git_username) {
-    return alert('填写 Git 密码时请同时填写用户名')
+    return toast.warning('填写 Git 密码时请同时填写用户名')
   }
   creating.value = true
   try {

@@ -6,7 +6,13 @@ export const templatesAPI = {
     return client.get<any, { ok: boolean; templates: Template[] }>('/templates', { params })
   },
 
-  createSiteFromTemplate(data: { template_id: string; site_name: string }) {
-    return client.post<any, { ok: boolean; site: any }>('/templates/use', data)
+  async createSiteFromTemplate(data: { template_id: string; site_name: string }) {
+    const response = await client.post<any, { ok: boolean; site_id: string }>('/templates/sites/from-template', data)
+    return {
+      ok: response.ok,
+      site: {
+        site_id: response.site_id,
+      },
+    }
   }
 }

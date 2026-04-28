@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.deps import get_current_user, get_db
+from backend.api.deps import get_current_user, get_db, require_role
 from backend.services.site_service import site_service
 
 router = APIRouter(prefix="/sites")
@@ -153,7 +153,7 @@ async def add_requirement(
 @router.delete("/{site_id}")
 async def delete_site(
     site_id: str,
-    current_user: object = Depends(get_current_user),
+    current_user: object = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     await site_service.delete_site(db, site_id, current_user)
