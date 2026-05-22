@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import type { Site } from '@/types/models'
 
-const props = defineProps<{
+defineProps<{
   repos: Site[]
   activeRepoId: string
 }>()
 
 const emit = defineEmits<{
   (e: 'select', repoId: string): void
+  (e: 'viewBuildLog', repo: Site): void
 }>()
 </script>
 
@@ -25,8 +26,12 @@ const emit = defineEmits<{
       {{ repo.name }}
       <span
         v-if="repo.status === 'building'"
-        class="ml-1 text-xs text-yellow-500"
-      >克隆中...</span>
+        class="ml-1 text-xs text-yellow-500 underline-offset-2 hover:underline"
+        role="button"
+        tabindex="0"
+        @click.stop="emit('viewBuildLog', repo)"
+        @keyup.enter.stop="emit('viewBuildLog', repo)"
+      >克隆中... 查看</span>
     </button>
   </div>
 </template>

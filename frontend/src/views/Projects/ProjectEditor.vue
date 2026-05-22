@@ -8,7 +8,18 @@ import RepoFileTree from './components/RepoFileTree.vue'
 import { ArrowLeft } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import CodeEditor from '@/components/Editor/CodeEditor.vue'
+import BuildLogModal from '@/components/BuildLogModal.vue'
 import type { Site } from '@/types/models'
+
+const buildLogOpen = ref(false)
+const buildLogSiteId = ref('')
+const buildLogSiteName = ref('')
+
+function openBuildLog(repo: Site) {
+  buildLogSiteId.value = repo.site_id
+  buildLogSiteName.value = repo.name
+  buildLogOpen.value = true
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -127,6 +138,7 @@ const activeTabContent = computed(() => openTabs.value.find(t => t.id === active
       :repos="repos"
       :activeRepoId="activeRepoId"
       @select="handleSelectRepo"
+      @viewBuildLog="openBuildLog"
     />
 
     <div class="flex flex-1 overflow-hidden">
@@ -170,5 +182,11 @@ const activeTabContent = computed(() => openTabs.value.find(t => t.id === active
         </div>
       </div>
     </div>
+
+    <BuildLogModal
+      v-model:open="buildLogOpen"
+      :site-id="buildLogSiteId"
+      :site-name="buildLogSiteName"
+    />
   </div>
 </template>
