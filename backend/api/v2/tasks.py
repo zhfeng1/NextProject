@@ -94,9 +94,12 @@ async def delete_task(
 @router.get("/site/{site_id}")
 async def list_site_tasks(
     site_id: str,
+    task_type: str | None = Query(default=None),
     limit: int = Query(default=30, ge=1, le=200),
     current_user: object = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    tasks = await task_service.list_site_tasks(db, site_id, current_user, limit=limit)
+    tasks = await task_service.list_site_tasks(
+        db, site_id, current_user, limit=limit, task_type=task_type
+    )
     return {"ok": True, "site_id": site_id, "tasks": [task_service.serialize_task(task) for task in tasks]}

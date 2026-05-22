@@ -206,11 +206,14 @@ class TaskService:
         site_id: str,
         current_user: object,
         limit: int = 30,
+        task_type: str | None = None,
     ) -> list[Task]:
         site = await site_service.get_site_by_public_id(db, site_id, current_user)
-        rows = await db.execute(
-            select(Task).where(Task.site_id == site.id).order_by(desc(Task.created_at), desc(Task.id)).limit(limit)
-        )
+        query = select(Task).where(Task.site_id == site.id)
+        if task_type:
+            query = query.where(Task.task_type == task_type)
+        query = query.order_by(desc(Task.created_at), desc(Task.id)).limit(limit)
+        rows = await db.execute(query)
         return list(rows.scalars().all())
 
     async def append_log(
