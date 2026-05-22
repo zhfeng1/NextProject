@@ -6,11 +6,14 @@ import { formatDate } from '@/utils/format'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Globe, ArrowLeft, Power, PowerOff, MonitorPlay, Settings } from 'lucide-vue-next'
+import BuildLogModal from '@/components/BuildLogModal.vue'
 
 const route = useRoute()
 const router = useRouter()
 const siteStore = useSiteStore()
 const previewIframe = ref<HTMLIFrameElement>()
+
+const buildLogOpen = ref(false)
 
 const siteId = route.params.id as string
 const site = computed(() => siteStore.currentSite)
@@ -90,7 +93,19 @@ const refreshIframe = () => {
           <Globe class="w-6 h-6 text-muted-foreground" />
           {{ site.name }}
         </CardTitle>
-        <span :class="site.status === 'running' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'" class="px-3 py-1 text-sm rounded font-medium">
+        <button
+          v-if="site.status === 'building'"
+          type="button"
+          class="px-3 py-1 text-sm rounded font-medium bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
+          @click="buildLogOpen = true"
+        >
+          {{ statusLabel }}（点击查看日志）
+        </button>
+        <span
+          v-else
+          :class="site.status === 'running' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'"
+          class="px-3 py-1 text-sm rounded font-medium"
+        >
           {{ statusLabel }}
         </span>
       </CardHeader>
@@ -137,5 +152,11 @@ const refreshIframe = () => {
         <p>站点未运行，启动后可预览</p>
       </CardContent>
     </Card>
+
+    <BuildLogModal
+      v-model:open="buildLogOpen"
+      :site-id="site.site_id"
+      :site-name="site.name"
+    />
   </div>
 </template>
