@@ -5,6 +5,7 @@ import client from '@/api/client'
 import { formatDate } from '@/utils/format'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import BuildLogModal from '@/components/BuildLogModal.vue'
 import {
   Activity,
   Bot,
@@ -22,6 +23,9 @@ import {
 } from 'lucide-vue-next'
 
 type OverviewStats = {
+  projects: {
+    total: number
+  }
   sites: {
     total: number
     running: number
@@ -75,6 +79,7 @@ type OverviewStats = {
 const router = useRouter()
 
 const stats = ref<OverviewStats>({
+  projects: { total: 0 },
   sites: { total: 0, running: 0, stopped: 0, building: 0, error: 0, git_linked: 0 },
   tasks: { total: 0, queued: 0, running: 0, success: 0, failed: 0, canceled: 0, success_rate: 0 },
   providers: { codex: 0, claude_code: 0, gemini_cli: 0 },
@@ -90,6 +95,16 @@ const health = ref<{ components: Record<string, { status: string }> }>({
 
 const loading = ref(true)
 
+const buildLogOpen = ref(false)
+const buildLogSiteId = ref('')
+const buildLogSiteName = ref('')
+
+function openBuildLog(siteId: string, name: string) {
+  buildLogSiteId.value = siteId
+  buildLogSiteName.value = name
+  buildLogOpen.value = true
+}
+
 const topProvider = computed(() => {
   const items = [
     { key: 'codex', label: 'Codex', value: stats.value.providers.codex },
@@ -101,9 +116,9 @@ const topProvider = computed(() => {
 
 const overviewCards = computed(() => [
   {
-    title: '站点总数',
-    value: stats.value.sites.total,
-    helper: `${stats.value.sites.git_linked} 个来自 Git 仓库`,
+    title: '项目总数',
+    value: stats.value.projects.total,
+    helper: `包含 ${stats.value.sites.total} 个站点`,
     icon: Globe,
     iconClass: 'text-sky-600',
     panelClass: 'from-sky-500/15 via-sky-400/5 to-transparent',
@@ -431,7 +446,22 @@ onMounted(async () => {
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
                   <span class="truncate text-sm font-medium text-slate-900">{{ site.name }}</span>
-                  <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">{{ siteStatusLabel(site.status) }}</span>
+                  <span
+                    v-if="site.status === 'building'"
+                    class="rounded-full bg-yellow-100 px-2 py-0.5 text-[11px] text-yellow-700 cursor-pointer hover:bg-yellow-200"
+                    role="button"
+                    tabindex="0"
+                    @click.stop="openBuildLog(site.site_id, site.name)"
+                    @keyup.enter.stop="openBuildLog(site.site_id, site.name)"
+                  >
+                    {{ siteStatusLabel(site.status) }}（查看日志）
+                  </span>
+                  <span
+                    v-else
+                    class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600"
+                  >
+                    {{ siteStatusLabel(site.status) }}
+                  </span>
                 </div>
                 <div class="mt-1 text-xs text-slate-500">
                   {{ site.site_id }} · {{ site.source === 'git' ? 'Git 导入' : '空白/模板' }} · {{ formatDate(site.created_at || '') }}
@@ -445,5 +475,11 @@ onMounted(async () => {
         </CardContent>
       </Card>
     </section>
+
+    <BuildLogModal
+      v-model:open="buildLogOpen"
+      :site-id="buildLogSiteId"
+      :site-name="buildLogSiteName"
+    />
   </div>
 </template>
