@@ -35,7 +35,7 @@ async function loadTasks() {
     const all: Task[] = []
     for (const s of sites.value) {
       try {
-        const tr = await tasksAPI.listBySite(s.site_id, 20)
+        const tr = await tasksAPI.listBySite(s.site_id, { limit: 20 })
         if (tr.tasks) all.push(...tr.tasks)
       } catch {}
     }

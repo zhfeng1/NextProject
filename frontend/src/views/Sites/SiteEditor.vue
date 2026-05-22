@@ -371,7 +371,7 @@ async function inspectTask(task: Task) {
 
 async function refreshTaskHistory() {
   try {
-    const res = await tasksAPI.listBySite(siteId.value, 5)
+    const res = await tasksAPI.listBySite(siteId.value, { limit: 5 })
     taskHistory.value = res.tasks || []
     const activeTask = taskHistory.value.find(task => !isTerminal(task.status))
     if (activeTask && (!currentTask.value || currentTask.value.id === activeTask.id || isTerminal(taskStatus.value))) {

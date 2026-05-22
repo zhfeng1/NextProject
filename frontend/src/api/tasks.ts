@@ -80,9 +80,12 @@ export const tasksAPI = {
     )
   },
 
-  listBySite(siteId: string, limit = 10) {
+  listBySite(siteId: string, opts: { task_type?: string; limit?: number } = {}) {
+    const params = new URLSearchParams()
+    if (opts.task_type) params.set('task_type', opts.task_type)
+    params.set('limit', String(opts.limit ?? 10))
     return client.get<any, { ok: boolean; tasks: Task[] }>(
-      `/tasks/site/${siteId}?limit=${limit}`,
+      `/tasks/site/${siteId}?${params.toString()}`,
     )
   },
 
