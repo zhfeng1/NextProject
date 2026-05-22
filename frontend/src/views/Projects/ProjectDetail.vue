@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Plus, ArrowLeft, GitBranch, Code, Trash2 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
+import BuildLogModal from '@/components/BuildLogModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -21,6 +22,16 @@ const project = computed(() => projectStore.currentProject)
 const showAddRepoDialog = ref(false)
 const addingRepo = ref(false)
 const addRepoForm = ref({ name: '', git_url: '', git_branch: '', git_username: '', git_password: '' })
+
+const buildLogOpen = ref(false)
+const buildLogSiteId = ref('')
+const buildLogSiteName = ref('')
+
+function openBuildLog(siteId: string, name: string) {
+  buildLogSiteId.value = siteId
+  buildLogSiteName.value = name
+  buildLogOpen.value = true
+}
 
 onMounted(() => {
   projectStore.fetchProject(projectId)
@@ -120,7 +131,18 @@ const handleDeleteRepo = async (repoId: string, repoName: string) => {
           </CardTitle>
         </CardHeader>
         <CardContent class="text-sm text-muted-foreground space-y-1">
-          <span :class="repo.status === 'building' ? 'text-yellow-500' : repo.status === 'running' ? 'text-green-500' : repo.status === 'error' ? 'text-red-500' : 'text-gray-500'">
+          <button
+            v-if="repo.status === 'building'"
+            type="button"
+            class="text-yellow-500 underline-offset-2 hover:underline cursor-pointer text-left"
+            @click.stop="openBuildLog(repo.site_id, repo.name)"
+          >
+            {{ repo.status }}（点击查看日志）
+          </button>
+          <span
+            v-else
+            :class="repo.status === 'running' ? 'text-green-500' : repo.status === 'error' ? 'text-red-500' : 'text-gray-500'"
+          >
             {{ repo.status }}
           </span>
           <p>创建于: {{ formatDate(repo.created_at) }}</p>
@@ -171,5 +193,11 @@ const handleDeleteRepo = async (repoId: string, repoName: string) => {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <BuildLogModal
+      v-model:open="buildLogOpen"
+      :site-id="buildLogSiteId"
+      :site-name="buildLogSiteName"
+    />
   </div>
 </template>
