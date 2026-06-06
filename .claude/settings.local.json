@@ -1,0 +1,31 @@
+{
+  "disabledMcpjsonServers": ["chrome-devtools"],
+  "permissions": {
+    "allow": [
+      "Bash(wc:*)",
+      "mcp__grok-search__web_fetch",
+      "Bash(docker compose:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(claude mcp:*)",
+      "Bash(grep -r \"default.*password\\\\|admin.*password\\\\|test.*user\\\\|demo.*account\" backend/ scripts/ .env*)",
+      "Bash(find /Users/zhfeng/IdeaProjects/NextProject/backend -type f -name *metric* -o -name *prometheus*)",
+      "Bash(find /Users/zhfeng/IdeaProjects/NextProject -name *.py -newer /Users/zhfeng/IdeaProjects/NextProject/docker-compose.yml -not -path */.* -not -path */__pycache__/*)",
+      "Bash(sort -t/ -k7)",
+      "Bash(xargs ls:*)",
+      "Bash(curl -s http://localhost:20100/api/v2/stats/overview)",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s http://localhost:20100/api/health)",
+      "Bash(curl -s http://localhost:20100/api/v2/auth/login -X POST -H \"Content-Type: application/json\" -d '{\"\"\"\"username\"\"\"\":\"\"\"\"admin\"\"\"\",\"\"\"\"password\"\"\"\":\"\"\"\"admin\"\"\"\"}')",
+      "Bash(xargs cat:*)",
+      "Bash(curl -s http://localhost:20100/api/v2/sites/)",
+      "Bash(curl -sv http://localhost:20100/api/v2/sites/)",
+      "Bash(no_proxy=\"localhost,127.0.0.1\" curl -s http://localhost:20100/api/v2/sites/)",
+      "Bash(no_proxy=\"localhost,127.0.0.1\" curl -sv http://localhost:20100/api/v2/stats/overview)",
+      "Bash(no_proxy=\"*\" docker exec nextproject-main-service curl -s http://localhost:8080/api/v2/stats/overview)",
+      "Bash(no_proxy=\"*\" docker exec nextproject-main-service curl -s http://localhost:8080/openapi.json)",
+      "Bash(find /Users/zhfeng/IdeaProjects/NextProject/backend /Users/zhfeng/IdeaProjects/NextProject/frontend/src -newer /Users/zhfeng/IdeaProjects/NextProject/docker-compose.yml -not -path */__pycache__/* -not -path */node_modules/* -name *.py -o -name *.vue -o -name *.ts)",
+      "Bash(no_proxy=\"*\" docker compose build main-service)",
+      "Bash(no_proxy=\"*\" curl -s http://localhost:20100/api/v2/stats/overview)"
+    ]
+  }
+}

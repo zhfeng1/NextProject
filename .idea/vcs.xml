@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="VcsDirectoryMappings">
-    <mapping directory="" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/tmp_Mycel" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/generated_sites/1374883c-63d6-437f-8493-28b716e4dda9" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/generated_sites/15c2b017-46eb-428e-8ab8-31a0023850dc" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/generated_sites/58506bb9-c6d6-43d5-9b15-7dd227fd1aba" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/generated_sites/6640ad15-239f-4128-b4a8-0b7666b57db9" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/generated_sites/9241f162-b75a-41bd-a15c-e9adb4b7deb2" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/generated_sites/ce5c65db-7710-4ca2-be49-562226339350" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/generated_sites/site" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/generated_sites/site-1" vcs="Git" />
   </component>
 </project>

@@ -4,10 +4,28 @@
 
 ```bash
 cp .env.example .env
-docker compose up -d --build
+./start.sh --build
 ```
 
 > 说明：`main-service` 会挂载 `/var/run/docker.sock`，用于执行本地镜像构建与推送（Apollo 部署任务）。
+
+默认只启动核心服务：`postgres`、`redis`、`minio`、`codex-mcp`、`main-service`、`celery-worker`、`frontend`。
+
+按需启用可选服务：
+
+```bash
+# 启动核心服务 + Flower/Prometheus/Grafana
+./start.sh --monitoring
+
+# 启动核心服务 + Celery Beat 定时调度器
+./start.sh --scheduler
+
+# 启动核心服务 + 所有可选运行服务
+./start.sh --all
+
+# 单独运行后端测试
+docker compose run --rm test
+```
 
 ## `.env` 配置
 
