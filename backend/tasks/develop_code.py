@@ -16,10 +16,10 @@ def develop_code_task(self, task_id: str) -> dict[str, object]:
             task = await db.get(Task, task_id)
             if task is None:
                 raise ValueError(f"Task not found: {task_id}")
-            site_id = str(task.site_id)
+            lock_id = f"project:{task.project_id}" if getattr(task, "project_id", None) else f"site:{task.site_id}"
 
-        # Acquire site-level lock outside the DB session
-        if not acquire_site_lock(site_id, task_id):
+        # Acquire target-level lock outside the DB session.
+        if not acquire_site_lock(lock_id, task_id):
             raise self.retry(countdown=30)
 
         try:
@@ -27,6 +27,6 @@ def develop_code_task(self, task_id: str) -> dict[str, object]:
                 result_task = await task_service.run_develop_task(db, task_id)
                 return task_service.serialize_task(result_task)
         finally:
-            release_site_lock(site_id, task_id)
+            release_site_lock(lock_id, task_id)
 
     return asyncio.run(_run())

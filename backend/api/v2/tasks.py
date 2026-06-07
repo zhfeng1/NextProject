@@ -29,6 +29,46 @@ async def create_task(
     return {"ok": True, "task_id": str(task.id), "task": task_service.serialize_task(task)}
 
 
+@router.get("")
+async def list_board_tasks(
+    project_id: str | None = Query(default=None),
+    repo_id: str | None = Query(default=None),
+    provider: str | None = Query(default=None),
+    board_status: str | None = Query(default=None),
+    priority: str | None = Query(default=None),
+    keyword: str | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
+    current_user: object = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    tasks = await task_service.list_board_tasks(
+        db,
+        current_user,
+        project_id=project_id,
+        repo_id=repo_id,
+        provider=provider,
+        board_status=board_status,
+        priority=priority,
+        keyword=keyword,
+        limit=limit,
+    )
+    return {"ok": True, "tasks": tasks}
+
+
+@router.get("/site/{site_id}")
+async def list_site_tasks(
+    site_id: str,
+    task_type: str | None = Query(default=None),
+    limit: int = Query(default=30, ge=1, le=200),
+    current_user: object = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    tasks = await task_service.list_site_tasks(
+        db, site_id, current_user, limit=limit, task_type=task_type
+    )
+    return {"ok": True, "site_id": site_id, "tasks": [task_service.serialize_task(task) for task in tasks]}
+
+
 @router.get("/{task_id}")
 async def get_task(
     task_id: str,
@@ -39,7 +79,23 @@ async def get_task(
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     task = await task_service.get_task(db, task_id, current_user)
-    return {"ok": True, "task": task_service.serialize_task(task)}
+    return {"ok": True, "task": await task_service.serialize_task_detail(db, task)}
+
+
+@router.patch("/{task_id}/board-status")
+async def update_board_status(
+    task_id: str,
+    payload: dict[str, Any] = Body(default_factory=dict),
+    current_user: object = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    task = await task_service.update_board_status(
+        db,
+        task_id,
+        current_user,
+        str(payload.get("board_status") or ""),
+    )
+    return {"ok": True, "task": await task_service.serialize_task_detail(db, task)}
 
 
 @router.get("/{task_id}/logs")
@@ -81,6 +137,16 @@ async def cancel_task(
     return {"ok": True, "task": task_service.serialize_task(task)}
 
 
+@router.post("/{task_id}/rollback")
+async def rollback_task(
+    task_id: str,
+    current_user: object = Depends(require_role("developer")),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    task = await task_service.rollback_task(db, task_id, current_user)
+    return {"ok": True, "task": await task_service.serialize_task_detail(db, task)}
+
+
 @router.delete("/{task_id}")
 async def delete_task(
     task_id: str,
@@ -89,17 +155,3 @@ async def delete_task(
 ) -> dict[str, Any]:
     await task_service.delete_task(db, task_id, current_user)
     return {"ok": True, "task_id": task_id}
-
-
-@router.get("/site/{site_id}")
-async def list_site_tasks(
-    site_id: str,
-    task_type: str | None = Query(default=None),
-    limit: int = Query(default=30, ge=1, le=200),
-    current_user: object = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
-    tasks = await task_service.list_site_tasks(
-        db, site_id, current_user, limit=limit, task_type=task_type
-    )
-    return {"ok": True, "site_id": site_id, "tasks": [task_service.serialize_task(task) for task in tasks]}

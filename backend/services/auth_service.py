@@ -35,19 +35,7 @@ class AuthService:
         }
 
     def serialize_user_config(self, cfg: UserConfig) -> dict[str, Any]:
-        return {
-            "llm_mode": cfg.llm_mode,
-            "llm_base_url": cfg.llm_base_url,
-            "llm_api_key": cfg.llm_api_key,
-            "llm_model": cfg.llm_model,
-            "codex_client_id": cfg.codex_client_id,
-            "codex_client_secret": cfg.codex_client_secret,
-            "codex_redirect_uri": cfg.codex_redirect_uri,
-            "codex_access_token": cfg.codex_access_token,
-            "codex_mcp_url": cfg.codex_mcp_url,
-            "claude_api_key": cfg.claude_api_key,
-            "gemini_api_key": cfg.gemini_api_key,
-        }
+        return {}
 
     async def _get_or_create_user_config(self, db: AsyncSession, user_id: str) -> UserConfig:
         cfg = await db.get(UserConfig, user_id)
@@ -158,15 +146,6 @@ class AuthService:
 
     async def update_user_config(self, db: AsyncSession, user_id: str, data: dict[str, Any]) -> dict[str, Any]:
         cfg = await self._get_or_create_user_config(db, user_id)
-        allowed = {
-            "llm_mode", "llm_base_url", "llm_api_key", "llm_model",
-            "codex_client_id", "codex_client_secret", "codex_redirect_uri",
-            "codex_access_token", "codex_mcp_url",
-            "claude_api_key", "gemini_api_key",
-        }
-        for key, value in data.items():
-            if key in allowed:
-                setattr(cfg, key, value)
         await db.commit()
         return {"ok": True, "config": self.serialize_user_config(cfg)}
 

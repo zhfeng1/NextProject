@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_user, get_db
 from backend.services.project_service import project_service
 from backend.services.site_service import site_service
+from backend.services.task_service import task_service
 
 router = APIRouter(prefix="/projects")
 
@@ -74,6 +75,17 @@ async def delete_project(
 ) -> dict[str, Any]:
     await project_service.delete_project(db, project_id, current_user)
     return {"ok": True}
+
+
+@router.post("/{project_id}/tasks")
+async def create_project_task(
+    project_id: str,
+    payload: dict[str, Any] = Body(default_factory=dict),
+    current_user: object = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    task = await task_service.create_project_task(db, current_user, project_id, payload, enqueue=True)
+    return {"ok": True, "task_id": str(task.id), "task": await task_service.serialize_task_detail(db, task)}
 
 
 @router.post("/{project_id}/repos")

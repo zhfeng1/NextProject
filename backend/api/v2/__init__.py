@@ -8,7 +8,6 @@ from backend.api.v2.tasks import router as tasks_router
 from backend.api.v2.templates import router as templates_router
 from backend.api.v2.versions import router as versions_router
 from backend.api.v2.websocket import router as websocket_router
-from backend.api.v2.workflows import router as workflows_router
 
 __all__ = [
     "auth_router",
@@ -21,5 +20,4 @@ __all__ = [
     "templates_router",
     "versions_router",
     "websocket_router",
-    "workflows_router",
 ]

@@ -5,12 +5,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user
 from backend.core.database import get_db
 from backend.models import Site, SiteStatus, Task
+from backend.services.project_service import project_service
 from backend.services.site_service import site_service
 
 router = APIRouter()
@@ -49,6 +50,10 @@ async def get_overview_stats(
     site_ids = [site.id for site in sites]
     site_public_map = {str(site.id): site.site_id for site in sites}
 
+    projects = await project_service.list_projects(db, user=current_user, include_deleted=False)
+    project_total = len(projects)
+    project_ids = [project.id for project in projects]
+
     site_total = len(sites)
     site_running = sum(1 for site in sites if site.status == SiteStatus.RUNNING.value)
     site_stopped = sum(1 for site in sites if site.status == SiteStatus.STOPPED.value)
@@ -57,10 +62,12 @@ async def get_overview_stats(
     git_linked = sum(1 for site in sites if (getattr(site, "config", {}) or {}).get("git_source"))
 
     task_query = select(Task).order_by(desc(Task.created_at))
+    visibility = []
     if site_ids:
-        task_query = task_query.where(Task.site_id.in_(site_ids))
-    else:
-        task_query = task_query.where(Task.site_id.in_([]))
+        visibility.append(Task.site_id.in_(site_ids))
+    if project_ids:
+        visibility.append(Task.project_id.in_(project_ids))
+    task_query = task_query.where(or_(*visibility) if visibility else Task.id == "__none__")
     tasks = list((await db.execute(task_query)).scalars().all())
 
     task_status_counter = Counter(getattr(task, "status", "") or "" for task in tasks)
@@ -90,6 +97,8 @@ async def get_overview_stats(
         {
             "id": str(task.id),
             "site_id": site_public_map.get(str(task.site_id), str(task.site_id)),
+            "project_id": str(getattr(task, "project_id", "") or ""),
+            "title": getattr(task, "title", "") or task.task_type,
             "provider": task.provider or "system",
             "task_type": task.task_type,
             "status": task.status,
@@ -114,6 +123,9 @@ async def get_overview_stats(
 
     return {
         "ok": True,
+        "projects": {
+            "total": project_total,
+        },
         "sites": {
             "total": site_total,
             "running": site_running,

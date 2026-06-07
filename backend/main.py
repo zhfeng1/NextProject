@@ -78,14 +78,6 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def build_llm_headers(api_key: str) -> dict[str, str]:
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-        headers["x-api-key"] = api_key
-    return headers
-
-
 def append_provider_auth_log(provider: str, line: str) -> None:
     provider_auth_logs[provider].append(f"[{now_iso()}] {line.rstrip()}")
 
@@ -93,6 +85,20 @@ def append_provider_auth_log(provider: str, line: str) -> None:
 async def _add_column_if_missing(conn: Any, table: str, column: str, col_def: str) -> None:
     """Idempotent column addition for SQLite and PostgreSQL."""
     dialect = conn.dialect.name
+    if dialect == "postgresql":
+        exists = await conn.execute(
+            text("SELECT to_regclass(:table_name)"),
+            {"table_name": table},
+        )
+        if exists.scalar() is None:
+            return
+    else:
+        exists = await conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name=:table_name"),
+            {"table_name": table},
+        )
+        if exists.scalar() is None:
+            return
     if dialect == "postgresql":
         await conn.execute(
             text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {col_def}")
@@ -105,13 +111,32 @@ async def _add_column_if_missing(conn: Any, table: str, column: str, col_def: st
             await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}"))
 
 
+async def _drop_table_if_exists(conn: Any, table: str) -> None:
+    dialect = conn.dialect.name
+    suffix = " CASCADE" if dialect == "postgresql" else ""
+    await conn.execute(text(f"DROP TABLE IF EXISTS {table}{suffix}"))
+
+
 async def ensure_bootstrap_data() -> None:
     async with engine.begin() as conn:
         if settings.create_tables_on_startup:
             await conn.run_sync(Base.metadata.create_all)
+        for legacy_table in ("site_skill_bindings", "skills", "user_mcp_services", "workflow_runs"):
+            await _drop_table_if_exists(conn, legacy_table)
         # Idempotent column migrations
         await _add_column_if_missing(conn, "user_configs", "claude_api_key", "TEXT NOT NULL DEFAULT ''")
         await _add_column_if_missing(conn, "user_configs", "gemini_api_key", "TEXT NOT NULL DEFAULT ''")
+        await _add_column_if_missing(conn, "user_llm_providers", "scope_type", "VARCHAR(16) NOT NULL DEFAULT 'global'")
+        await _add_column_if_missing(conn, "user_llm_providers", "project_id", "VARCHAR(36)")
+        await _add_column_if_missing(conn, "user_llm_providers", "formats_json", "JSON NOT NULL DEFAULT '[]'")
+        await _add_column_if_missing(conn, "agent_tasks", "project_id", "VARCHAR(36)")
+        await _add_column_if_missing(conn, "agent_tasks", "title", "VARCHAR(255) NOT NULL DEFAULT ''")
+        await _add_column_if_missing(conn, "agent_tasks", "description", "TEXT NOT NULL DEFAULT ''")
+        await _add_column_if_missing(conn, "agent_tasks", "priority", "VARCHAR(16) NOT NULL DEFAULT 'medium'")
+        await _add_column_if_missing(conn, "agent_tasks", "assignee", "VARCHAR(255) NOT NULL DEFAULT ''")
+        await _add_column_if_missing(conn, "agent_tasks", "board_status", "VARCHAR(32) NOT NULL DEFAULT 'queued'")
+        await _add_column_if_missing(conn, "agent_tasks", "workflow_stages_json", "JSON NOT NULL DEFAULT '[]'")
+        await _add_column_if_missing(conn, "agent_tasks", "runtime_config_dir", "VARCHAR(512) NOT NULL DEFAULT ''")
 
     async with AsyncSessionLocal() as db:
         app_config = await db.get(AppConfig, 1)
@@ -346,54 +371,20 @@ async def site_config_page(request: Request, site_id: str) -> HTMLResponse:
 
 @app.get("/api/config")
 async def get_config(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    config = await db.get(AppConfig, 1)
-    if config is None:
-        return {}
-    return {
-        "llm_mode": config.llm_mode,
-        "llm_base_url": config.llm_base_url,
-        "llm_api_key": config.llm_api_key,
-        "llm_model": config.llm_model,
-        "codex_client_id": config.codex_client_id,
-        "codex_client_secret": config.codex_client_secret,
-        "codex_redirect_uri": config.codex_redirect_uri,
-        "codex_access_token": config.codex_access_token,
-        "codex_mcp_url": config.codex_mcp_url,
-    }
+    return {}
 
 
 @app.post("/api/config")
 async def save_config(payload: dict[str, Any] = Body(default_factory=dict), db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    config = await db.get(AppConfig, 1)
-    if config is None:
-        config = AppConfig(id=1)
-        db.add(config)
-    for key, value in payload.items():
-        if hasattr(config, key):
-            setattr(config, key, value)
-    await db.commit()
     return {"ok": True}
 
 
 @app.post("/api/llm-models")
 async def fetch_llm_models(payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
-    base_url = (payload.get("llm_base_url") or "https://api.openai.com/v1").rstrip("/")
-    api_key = (payload.get("llm_api_key") or "").strip()
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            response = await client.get(f"{base_url}/models", headers=build_llm_headers(api_key))
-            response.raise_for_status()
-        models = sorted(
-            [
-                item.get("id", "")
-                for item in response.json().get("data", [])
-                if isinstance(item, dict) and item.get("id")
-            ],
-            key=str.lower,
-        )
-        return {"ok": True, "models": models}
-    except Exception as exc:
-        return JSONResponse(status_code=502, content={"ok": False, "models": [], "message": str(exc)})
+    return JSONResponse(
+        status_code=410,
+        content={"ok": False, "models": [], "message": "模型配置已迁移到 /api/v2/providers"},
+    )
 
 
 @app.get("/api/sites")
@@ -573,9 +564,6 @@ async def test_site(payload: dict[str, Any] = Body(default_factory=dict), db: As
     site_id = (payload.get("site_id") or "").strip() or await get_default_site_id(db, user)
     if not site_id:
         return JSONResponse(status_code=404, content={"ok": False, "message": "暂无站点，请先创建"})
-    config = await db.get(AppConfig, 1)
-    if config is None or not config.codex_mcp_url:
-        return JSONResponse(status_code=400, content={"ok": False, "message": "未配置 codex_mcp_url，无法触发 Chrome DevTools MCP。"})
     return {"ok": True, "site_id": site_id, "result": {"target": f"/sites/{site_id}", "message": "MCP 测试请求已接受"}}
 
 
@@ -651,15 +639,29 @@ async def provider_auth_cancel(provider: str) -> dict[str, Any]:
     return {"ok": True}
 
 
-async def proxy_to_codex_bridge(method: str, path: str, json_payload: dict[str, Any] | None = None) -> Response:
-    url = f"{settings.code_mcp_bridge_url}{path}"
+async def proxy_to_mcp_bridge(
+    bridge_url: str,
+    bridge_name: str,
+    method: str,
+    path: str,
+    json_payload: dict[str, Any] | None = None,
+) -> Response:
+    url = f"{bridge_url}{path}"
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.request(method, url, json=json_payload)
             resp.raise_for_status()
             return JSONResponse(status_code=resp.status_code, content=resp.json())
     except Exception as exc:
-        return JSONResponse(status_code=502, content={"ok": False, "message": f"codex-mcp 不可用: {exc}"})
+        return JSONResponse(status_code=502, content={"ok": False, "message": f"{bridge_name} 不可用: {exc}"})
+
+
+async def proxy_to_codex_bridge(method: str, path: str, json_payload: dict[str, Any] | None = None) -> Response:
+    return await proxy_to_mcp_bridge(settings.code_mcp_bridge_url, "codex-mcp", method, path, json_payload)
+
+
+async def proxy_to_claude_bridge(method: str, path: str, json_payload: dict[str, Any] | None = None) -> Response:
+    return await proxy_to_mcp_bridge(settings.claude_mcp_bridge_url, "claude-code-mcp", method, path, json_payload)
 
 
 @app.post("/api/codex/oauth/start")
@@ -680,6 +682,26 @@ async def codex_oauth_status() -> Response:
 @app.get("/api/codex/mcp/status")
 async def codex_mcp_status() -> Response:
     return await proxy_to_codex_bridge("GET", "/mcp/status")
+
+
+@app.post("/api/claude-code/auth/start")
+async def start_claude_auth() -> Response:
+    return await proxy_to_claude_bridge("POST", "/auth/start")
+
+
+@app.post("/api/claude-code/auth/cancel")
+async def cancel_claude_auth() -> Response:
+    return await proxy_to_claude_bridge("POST", "/auth/cancel")
+
+
+@app.get("/api/claude-code/auth/status")
+async def claude_auth_status() -> Response:
+    return await proxy_to_claude_bridge("GET", "/auth/status")
+
+
+@app.get("/api/claude-code/mcp/status")
+async def claude_mcp_status() -> Response:
+    return await proxy_to_claude_bridge("GET", "/mcp/status")
 
 
 @app.get(settings.metrics_path)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_db
@@ -13,10 +13,22 @@ router = APIRouter(prefix="/skills")
 
 @router.get("")
 async def list_skills(
+    project_id: str | None = Query(default=None),
+    site_id: str | None = Query(default=None),
+    scope_type: str | None = Query(default=None),
     current_user: object = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    return {"ok": True, "skills": await skill_service.list_skills(db, current_user)}
+    return {
+        "ok": True,
+        "skills": await skill_service.list_skills(
+            db,
+            current_user,
+            project_id=project_id,
+            site_id=site_id,
+            scope_type=scope_type,
+        ),
+    }
 
 
 @router.post("")
@@ -55,19 +67,6 @@ async def import_skill(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     return {"ok": True, "skill": await skill_service.import_skill(db, current_user, payload)}
-
-
-@router.post("/{skill_id}/bind-site")
-async def bind_skill_to_site(
-    skill_id: str,
-    payload: dict[str, Any] = Body(default_factory=dict),
-    current_user: object = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
-    site_id = str(payload.get("site_id") or "").strip()
-    bind = bool(payload.get("bind", True))
-    skill = await skill_service.bind_site(db, current_user, skill_id, site_id, bind=bind)
-    return {"ok": True, "skill": skill}
 
 
 @router.get("/site/{site_id}")

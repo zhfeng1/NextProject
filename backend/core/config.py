@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     cors_allow_headers: str = Field(default="*", alias="CORS_ALLOW_HEADERS")
 
     code_mcp_bridge_url: str = Field(default="http://codex-mcp:8090", alias="CODEX_MCP_BRIDGE_URL")
+    claude_mcp_bridge_url: str = Field(default="http://claude-code-mcp:8091", alias="CLAUDE_MCP_BRIDGE_URL")
     llm_dialog_log_enabled: bool = Field(default=False, alias="LLM_DIALOG_LOG_ENABLED")
     llm_dialog_log_max_chars: int = Field(default=4000, alias="LLM_DIALOG_LOG_MAX_CHARS")
 

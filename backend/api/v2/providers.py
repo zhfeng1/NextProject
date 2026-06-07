@@ -7,15 +7,17 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Body, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_db
 from backend.core.encryption import decrypt_api_key, encrypt_api_key, is_masked, mask_api_key
 from backend.models.user_llm_provider import UserLLMProvider
+from backend.services.project_service import project_service
 
 router = APIRouter(prefix="/providers")
+SUPPORTED_FORMATS = {"responses", "messages"}
 
 # ---------------------------------------------------------------------------
 # SSRF protection: block requests to internal / private networks
@@ -56,30 +58,98 @@ def _validate_url_ssrf(url: str) -> None:
 
 
 def _serialize(p: UserLLMProvider) -> dict[str, Any]:
+    formats = _provider_formats(p)
     return {
         "id": str(p.id),
         "user_id": str(p.user_id),
+        "scope_type": getattr(p, "scope_type", "") or "global",
+        "project_id": str(p.project_id) if getattr(p, "project_id", None) else "",
         "name": p.name,
         "base_url": p.base_url,
         "api_key": mask_api_key(decrypt_api_key(p.api_key)) if p.api_key else "",
         "models": p.models or [],
-        "format": p.format,
+        "format": formats[0],
+        "formats": formats,
         "is_default": bool(p.is_default),
         "created_at": p.created_at.isoformat() if p.created_at else None,
         "updated_at": p.updated_at.isoformat() if p.updated_at else None,
     }
 
 
+def _provider_formats(provider: UserLLMProvider) -> list[str]:
+    raw = getattr(provider, "formats_json", None) or []
+    if isinstance(raw, str):
+        raw = [raw]
+    formats = [str(item).strip() for item in raw if str(item).strip() in SUPPORTED_FORMATS]
+    legacy = str(getattr(provider, "format", "") or "").strip()
+    if legacy in SUPPORTED_FORMATS and legacy not in formats:
+        formats.insert(0, legacy)
+    if not formats:
+        formats = ["responses"]
+    return list(dict.fromkeys(formats))
+
+
+def _normalize_formats(payload: dict[str, Any], existing: UserLLMProvider | None = None) -> list[str]:
+    raw = payload.get("formats")
+    if raw is None:
+        raw = payload.get("format")
+    if raw is None and existing is not None:
+        raw = _provider_formats(existing)
+    if raw is None:
+        raw = ["responses"]
+    if isinstance(raw, str):
+        raw = [raw]
+    formats = [str(item).strip() for item in raw if str(item).strip() in SUPPORTED_FORMATS]
+    formats = list(dict.fromkeys(formats))
+    if not formats:
+        raise HTTPException(status_code=400, detail="formats must include responses or messages")
+    return formats
+
+
+async def _normalize_scope(
+    db: AsyncSession,
+    current_user: object,
+    payload: dict[str, Any],
+    *,
+    existing: UserLLMProvider | None = None,
+) -> tuple[str, str | None]:
+    scope_type = str(payload.get("scope_type") or getattr(existing, "scope_type", "") or "global").strip() or "global"
+    if scope_type not in {"global", "project"}:
+        raise HTTPException(status_code=400, detail="scope_type must be global or project")
+    project_id = str(payload.get("project_id") or getattr(existing, "project_id", "") or "").strip() or None
+    if scope_type == "global":
+        return "global", None
+    if not project_id:
+        raise HTTPException(status_code=400, detail="project scope requires project_id")
+    await project_service.get_project(db, project_id, current_user)
+    return "project", project_id
+
+
 @router.get("")
 async def list_providers(
+    format: str | None = Query(default=None),
+    scope_type: str | None = Query(default=None),
+    project_id: str | None = Query(default=None),
     current_user: object = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     user_id = str(getattr(current_user, "id"))
-    rows = await db.execute(
-        select(UserLLMProvider).where(UserLLMProvider.user_id == user_id).order_by(UserLLMProvider.created_at)
-    )
-    return {"ok": True, "providers": [_serialize(p) for p in rows.scalars().all()]}
+    query = select(UserLLMProvider).where(UserLLMProvider.user_id == user_id)
+    if scope_type:
+        query = query.where(UserLLMProvider.scope_type == scope_type)
+    if project_id:
+        await project_service.get_project(db, project_id, current_user)
+        query = query.where(
+            or_(
+                UserLLMProvider.scope_type == "global",
+                UserLLMProvider.project_id == project_id,
+            )
+        )
+    rows = await db.execute(query.order_by(UserLLMProvider.scope_type, UserLLMProvider.created_at))
+    providers = list(rows.scalars().all())
+    if format:
+        providers = [p for p in providers if format in _provider_formats(p)]
+    return {"ok": True, "providers": [_serialize(p) for p in providers]}
 
 
 @router.post("")
@@ -89,14 +159,19 @@ async def create_provider(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     user_id = str(getattr(current_user, "id"))
+    scope_type, project_id = await _normalize_scope(db, current_user, payload)
+    formats = _normalize_formats(payload)
     p = UserLLMProvider(
         id=str(uuid.uuid4()),
         user_id=user_id,
+        scope_type=scope_type,
+        project_id=project_id,
         name=(payload.get("name") or "").strip() or "New Provider",
         base_url=(payload.get("base_url") or "").strip(),
         api_key=encrypt_api_key((payload.get("api_key") or "").strip()),
         models=payload.get("models") or [],
-        format=payload.get("format") or "responses",
+        format=formats[0],
+        formats_json=formats,
         is_default=bool(payload.get("is_default", False)),
     )
     db.add(p)
@@ -116,9 +191,16 @@ async def update_provider(
     p = await db.get(UserLLMProvider, provider_id)
     if p is None or str(p.user_id) != user_id:
         raise HTTPException(status_code=404, detail="Provider 未找到")
-    allowed = {"name", "base_url", "api_key", "models", "format", "is_default"}
+    if "scope_type" in payload or "project_id" in payload:
+        p.scope_type, p.project_id = await _normalize_scope(db, current_user, payload, existing=p)
+    allowed = {"name", "base_url", "api_key", "models", "format", "formats", "is_default"}
     for key, value in payload.items():
         if key not in allowed:
+            continue
+        if key in {"format", "formats"}:
+            formats = _normalize_formats(payload, existing=p)
+            p.format = formats[0]
+            p.formats_json = formats
             continue
         if key == "api_key":
             raw_key = (value or "").strip()
@@ -175,7 +257,12 @@ async def verify_model(
         api_key = decrypt_api_key(p.api_key) if p.api_key else ""
     if not api_key:
         return {"ok": False, "error": "API Key 为空，请先输入并保存 Key"}
-    fmt = p.format or "responses"
+    fmt = str(payload.get("format") or "").strip()
+    provider_formats = _provider_formats(p)
+    if not fmt:
+        fmt = provider_formats[0]
+    if fmt not in provider_formats:
+        raise HTTPException(status_code=400, detail=f"Provider 不支持 {fmt} 格式")
 
     try:
         async with httpx.AsyncClient(timeout=10) as client:
