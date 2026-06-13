@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/sidebar'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { Home, Globe, LayoutTemplate, ListTodo, Settings2, UserCog, LogOut, PlugZap, Sparkles, GitBranchPlus, FolderKanban } from 'lucide-vue-next'
+import { Home, LayoutTemplate, ListTodo, Settings2, UserCog, LogOut, PlugZap, Sparkles, FolderKanban } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -113,14 +113,6 @@ onMounted(async () => {
                   <router-link to="/skills">
                     <Sparkles class="w-4 h-4 mr-2" />
                     <span>Skill 中心</span>
-                  </router-link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton as-child :isActive="route.path === '/workflows'">
-                  <router-link to="/workflows">
-                    <GitBranchPlus class="w-4 h-4 mr-2" />
-                    <span>工作流中心</span>
                   </router-link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

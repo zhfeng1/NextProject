@@ -13,7 +13,6 @@ import { tasksAPI } from '@/api/tasks'
 import type { Task, TaskLog } from '@/api/tasks'
 import { useIframeBridge } from '@/composables/useIframeBridge'
 import SiteFileBrowserDialog from '@/components/SiteFileBrowserDialog.vue'
-import SiteWorkflowPanel from '@/components/SiteWorkflowPanel.vue'
 import ConversationPanel from '@/components/ConversationPanel.vue'
 
 // ── 路由 ────────────────────────────────────────────────────────────────────
@@ -340,15 +339,6 @@ async function restartSite() {
   }
 }
 
-async function submitWorkflowTask(payload: Record<string, unknown>) {
-  await launchTask({
-    ...payload,
-    current_url: buildAgentContextUrl(),
-    selected_xpath: pickedElement.value?.xpath || '',
-    console_errors: consoleErrors.value.map(e => `[${e.type}] ${e.message}`).join('\n'),
-  })
-}
-
 // ── 历史任务 ─────────────────────────────────────────────────────────────────
 const taskHistory = ref<Task[]>([])
 
@@ -628,15 +618,6 @@ onUnmounted(() => { stopTaskStream() })
             </Button>
           </CardContent>
         </Card>
-
-        <SiteWorkflowPanel
-          v-if="canOperateOnSite"
-          :site-id="siteId"
-          :current-url="buildAgentContextUrl()"
-          :selected-xpath="pickedElement?.xpath || ''"
-          :console-errors="consoleErrors.map(e => `[${e.type}] ${e.message}`).join('\n')"
-          @submit-task="submitWorkflowTask"
-        />
 
         <!-- ② 当前上下文 -->
         <Card>

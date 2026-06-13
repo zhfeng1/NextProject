@@ -7,20 +7,6 @@ export interface User {
   default_org_id?: string
 }
 
-export interface UserConfig {
-  llm_mode: string
-  llm_base_url: string
-  llm_api_key: string
-  llm_model: string
-  codex_client_id: string
-  codex_client_secret: string
-  codex_redirect_uri: string
-  codex_access_token: string
-  codex_mcp_url: string
-  claude_api_key: string
-  gemini_api_key: string
-}
-
 export interface Site {
   site_id: string
   name: string
@@ -81,17 +67,49 @@ export interface Template {
 }
 
 export interface Task {
-  task_id: string
+  id: string
   site_id: string
-  status: 'pending' | 'running' | 'success' | 'failed'
-  command: string
-  created_at: string
+  project_id?: string
+  title: string
+  description: string
+  priority: 'low' | 'medium' | 'high' | 'urgent' | string
+  assignee: string
+  board_status: 'todo' | 'queued' | 'running' | 'review' | 'done' | 'failed' | 'canceled' | string
+  provider: string
+  task_type: string
+  status: 'queued' | 'running' | 'success' | 'failed' | 'canceled' | string
+  workflow_stages: string[]
+  runtime_config_dir?: string
+  payload?: Record<string, unknown>
+  result?: Record<string, unknown>
+  error?: string
+  repositories?: TaskRepository[]
+  project_name?: string
+  created_at: string | null
+  started_at?: string | null
+  finished_at?: string | null
+}
+
+export interface TaskRepository {
+  site_id: string
+  site_db_id: string
+  name: string
+  repo_path: string
+  before_sha: string
+  after_sha: string
+  changed: boolean
+  commit_message: string
+  rollback_status: string
 }
 
 export interface MCPService {
+  id: string
   service_id: string
   name: string
   description: string
+  scope_type: 'global' | 'project' | 'repo'
+  project_id: string
+  site_id: string
   required_fields: string[]
   supports_config: boolean
   enabled: boolean
@@ -105,31 +123,15 @@ export interface Skill {
   id: string
   name: string
   description: string
-  scope: 'global' | 'site'
+  scope_type: 'global' | 'project' | 'repo'
+  scope?: 'global' | 'project' | 'repo'
+  project_id: string
+  site_id: string
   content: string
   triggers: string[]
   enabled: boolean
   source_type: string
   source_url: string
-  bound_site_ids: string[]
   created_at: string | null
   updated_at: string | null
-}
-
-export interface WorkflowRun {
-  id: string
-  site_id: string
-  site_name: string
-  name: string
-  status: string
-  current_stage: 'research' | 'ideate' | 'plan' | 'execute' | 'optimize' | 'review'
-  current_stage_label: string
-  stage_status: Record<string, string>
-  stage_artifacts: Record<string, string>
-  enabled_mcp_services: string[]
-  enabled_skill_ids: string[]
-  summary: string
-  created_at: string | null
-  updated_at: string | null
-  finished_at: string | null
 }

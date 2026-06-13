@@ -1,5 +1,6 @@
 import client from './client'
-import type { Project, ProjectCreateRequest, RepoAddRequest, Site } from '@/types/models'
+import type { Project, ProjectCreateRequest, RepoAddRequest, Site, Task } from '@/types/models'
+import type { ProjectTaskPayload } from '@/api/tasks'
 
 export const projectsAPI = {
   list() {
@@ -20,6 +21,10 @@ export const projectsAPI = {
 
   delete(projectId: string) {
     return client.delete<any, { ok: boolean }>(`/projects/${projectId}`)
+  },
+
+  createTask(projectId: string, data: ProjectTaskPayload) {
+    return client.post<any, { ok: boolean; task: Task; task_id: string }>(`/projects/${projectId}/tasks`, data)
   },
 
   addRepo(projectId: string, data: RepoAddRequest) {

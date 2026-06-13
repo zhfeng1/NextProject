@@ -2,8 +2,8 @@ import client from './client'
 import type { Skill } from '@/types/models'
 
 export const skillsAPI = {
-  list() {
-    return client.get<any, { ok: boolean; skills: Skill[] }>('/skills')
+  list(params: { project_id?: string; site_id?: string; scope_type?: string } = {}) {
+    return client.get<any, { ok: boolean; skills: Skill[] }>('/skills', { params })
   },
 
   create(payload: Partial<Skill> & { content: string }) {
@@ -24,10 +24,6 @@ export const skillsAPI = {
 
   importSkillsSh(url: string, enabled = true) {
     return client.post<any, { ok: boolean; skill: Skill }>('/skills/import', { type: 'skills_sh', url, enabled })
-  },
-
-  bindSite(skillId: string, siteId: string, bind = true) {
-    return client.post<any, { ok: boolean; skill: Skill }>(`/skills/${skillId}/bind-site`, { site_id: siteId, bind })
   },
 
   listBySite(siteId: string) {

@@ -18,20 +18,6 @@ export interface RegisterRequest {
   name?: string
 }
 
-export interface UserConfig {
-  llm_mode: string
-  llm_base_url: string
-  llm_api_key: string
-  llm_model: string
-  codex_client_id: string
-  codex_client_secret: string
-  codex_redirect_uri: string
-  codex_access_token: string
-  codex_mcp_url: string
-  claude_api_key: string
-  gemini_api_key: string
-}
-
 export const authAPI = {
   login(data: LoginRequest) {
     return client.post<any, LoginResponse>('/auth/login', data)
@@ -62,10 +48,10 @@ export const authAPI = {
   },
 
   getUserConfig() {
-    return client.get<any, { ok: boolean; config: UserConfig }>('/auth/me/config')
+    return client.get<any, { ok: boolean; config: Record<string, unknown> }>('/auth/me/config')
   },
 
-  updateUserConfig(data: Partial<UserConfig>) {
-    return client.put<any, { ok: boolean; config: UserConfig }>('/auth/me/config', data)
+  updateUserConfig(data: Record<string, unknown>) {
+    return client.put<any, { ok: boolean; config: Record<string, unknown> }>('/auth/me/config', data)
   },
 }

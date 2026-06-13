@@ -1,4 +1,6 @@
 import client from './client'
+import type { Task } from '@/types/models'
+export type { Task } from '@/types/models'
 
 export interface TaskPayload {
   site_id: string
@@ -11,24 +13,25 @@ export interface TaskPayload {
   [key: string]: unknown
 }
 
+export interface ProjectTaskPayload {
+  repo_ids: string[]
+  provider: 'codex' | 'claude_code' | 'gemini_cli' | string
+  title: string
+  prompt: string
+  priority?: string
+  assignee?: string
+  workflow_stages?: string[]
+  mcp_service_ids?: string[]
+  skill_ids?: string[]
+  enabled_mcp_services?: string[]
+  enabled_skill_ids?: string[]
+}
+
 export interface TaskLog {
   id: number
   ts: string
   level: string
   line: string
-}
-
-export interface Task {
-  id: string
-  site_id: string
-  task_type: string
-  provider: string
-  status: 'queued' | 'running' | 'success' | 'failed' | 'canceled'
-  error: string
-  created_at: string
-  started_at: string | null
-  finished_at: string | null
-  result?: Record<string, unknown>
 }
 
 export interface TaskProviderOutput {
@@ -40,6 +43,18 @@ export interface TaskProviderOutput {
 }
 
 export const tasksAPI = {
+  list(params: {
+    project_id?: string
+    repo_id?: string
+    provider?: string
+    board_status?: string
+    priority?: string
+    keyword?: string
+    limit?: number
+  } = {}) {
+    return client.get<any, { ok: boolean; tasks: Task[] }>('/tasks', { params })
+  },
+
   create(payload: TaskPayload) {
     return client.post<any, { ok: boolean; task: Task }>('/tasks', payload)
   },
@@ -91,6 +106,14 @@ export const tasksAPI = {
 
   cancel(taskId: string) {
     return client.post(`/tasks/${taskId}/cancel`)
+  },
+
+  updateBoardStatus(taskId: string, boardStatus: string) {
+    return client.patch<any, { ok: boolean; task: Task }>(`/tasks/${taskId}/board-status`, { board_status: boardStatus })
+  },
+
+  rollback(taskId: string) {
+    return client.post<any, { ok: boolean; task: Task }>(`/tasks/${taskId}/rollback`)
   },
 
   remove(taskId: string) {

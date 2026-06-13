@@ -3,11 +3,14 @@ import client from './client'
 export interface LLMProvider {
   id: string
   user_id: string
+  scope_type: 'global' | 'project'
+  project_id: string
   name: string
   base_url: string
   api_key: string
   models: string[]
   format: 'responses' | 'messages'
+  formats: Array<'responses' | 'messages'>
   is_default: boolean
   created_at: string | null
   updated_at: string | null
@@ -16,8 +19,8 @@ export interface LLMProvider {
 export type LLMProviderCreate = Partial<Omit<LLMProvider, 'id' | 'user_id' | 'created_at' | 'updated_at'>>
 
 export const providersAPI = {
-  list() {
-    return client.get<any, { ok: boolean; providers: LLMProvider[] }>('/providers')
+  list(params: { format?: string; scope_type?: string; project_id?: string } = {}) {
+    return client.get<any, { ok: boolean; providers: LLMProvider[] }>('/providers', { params })
   },
 
   create(data: LLMProviderCreate) {
@@ -32,11 +35,11 @@ export const providersAPI = {
     return client.delete(`/providers/${id}`)
   },
 
-  fetchModels(data: { base_url: string; api_key: string }) {
+  fetchModels(data: { base_url: string; api_key?: string; provider_id?: string }) {
     return client.post<any, { ok: boolean; models: string[]; error?: string }>('/providers/fetch-models', data)
   },
 
-  verifyModel(data: { provider_id: string; model: string }) {
+  verifyModel(data: { provider_id: string; model: string; format?: 'responses' | 'messages'; api_key?: string }) {
     return client.post<any, { ok: boolean; message?: string; error?: string }>('/providers/verify-model', data)
   },
 }

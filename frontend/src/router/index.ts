@@ -90,11 +90,6 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Centers/SkillCenter.vue'),
       },
       {
-        path: 'workflows',
-        name: 'WorkflowCenter',
-        component: () => import('@/views/Centers/WorkflowCenter.vue'),
-      },
-      {
         path: 'settings',
         redirect: '/settings/account',
       },
