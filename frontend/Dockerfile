@@ -1,10 +1,15 @@
+# syntax=docker/dockerfile:1.7
+
 # 阶段一：使用 Node.js 构建打包环境
 FROM node:20-alpine AS build-stage
 
 WORKDIR /app
+ENV NPM_CONFIG_AUDIT=false
+ENV NPM_CONFIG_FUND=false
 # 优先复制依赖包管理文件，有效利用 Docker 构建缓存
-COPY package*.json ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefer-offline
 
 # 复制全部前端源码并编译
 COPY . .

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 使用 Docker Compose 启动所有服务
+# 使用 Docker Compose 启动核心服务，可按需启用 profile
 set -e
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -32,35 +32,62 @@ fi
 # ── 2. 解析参数 ───────────────────────────────────────────────
 BUILD_FLAG=""
 DETACH_FLAG="-d"
-PROFILE=""
+COMPOSE_PROFILE_FLAGS=()
+START_MONITORING=false
+START_SCHEDULER=false
 
 for arg in "$@"; do
     case "$arg" in
         --build|-b)   BUILD_FLAG="--build" ;;
         --no-detach)  DETACH_FLAG="" ;;
         --attach|-a)  DETACH_FLAG="" ;;
+        --monitoring) START_MONITORING=true ;;
+        --scheduler)  START_SCHEDULER=true ;;
+        --all)        START_MONITORING=true; START_SCHEDULER=true ;;
         *)            ;;
     esac
 done
 
+if [ "$START_MONITORING" = true ]; then
+    COMPOSE_PROFILE_FLAGS+=(--profile monitoring)
+fi
+
+if [ "$START_SCHEDULER" = true ]; then
+    COMPOSE_PROFILE_FLAGS+=(--profile scheduler)
+fi
+
 # ── 3. 启动 ───────────────────────────────────────────────────
 log_info "启动服务 (docker compose up $BUILD_FLAG $DETACH_FLAG)..."
 
-# 排除 test 服务（按需运行）
-docker compose up $BUILD_FLAG $DETACH_FLAG \
-    --scale test=0 \
-    postgres redis minio codex-mcp main-service celery-worker celery-beat flower frontend
+CORE_SERVICES=(postgres redis minio codex-mcp claude-code-mcp main-service celery-worker frontend)
+OPTIONAL_SERVICES=()
+
+if [ "$START_MONITORING" = true ]; then
+    OPTIONAL_SERVICES+=(flower prometheus grafana)
+fi
+
+if [ "$START_SCHEDULER" = true ]; then
+    OPTIONAL_SERVICES+=(celery-beat)
+fi
+
+docker compose "${COMPOSE_PROFILE_FLAGS[@]}" up $BUILD_FLAG $DETACH_FLAG \
+    "${CORE_SERVICES[@]}" "${OPTIONAL_SERVICES[@]}"
 
 if [ -n "$DETACH_FLAG" ]; then
     echo ""
     echo -e "${GREEN}========================================${NC}"
     echo -e "${GREEN}  服务已在后台启动${NC}"
     echo -e "${GREEN}  前端:         http://localhost:20100${NC}"
-    echo -e "${GREEN}  Flower:       http://localhost:20101${NC}"
     echo -e "${GREEN}  MinIO 控制台: http://localhost:20102${NC}"
-    echo -e "${GREEN}  Grafana:      http://localhost:20103${NC}"
+    if [ "$START_MONITORING" = true ]; then
+        echo -e "${GREEN}  Flower:       http://localhost:20101${NC}"
+        echo -e "${GREEN}  Grafana:      http://localhost:20103${NC}"
+    else
+        echo -e "${YELLOW}  监控服务未启动: ./start.sh --monitoring${NC}"
+    fi
     echo -e "${GREEN}========================================${NC}"
     echo ""
     echo -e "查看日志: ${BLUE}docker compose logs -f${NC}"
     echo -e "停止服务: ${BLUE}docker compose down${NC}"
+    echo -e "运行测试: ${BLUE}docker compose run --rm test${NC}"
 fi

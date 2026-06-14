@@ -1,6 +1,8 @@
 .git
 .gitignore
 .DS_Store
+.coverage
+.idea/
 __pycache__/
 *.pyc
 *.pyo
@@ -11,6 +13,11 @@ __pycache__/
 .venv/
 venv/
 node_modules/
+**/node_modules/
+**/dist/
+**/coverage/
+**/playwright-report/
+**/test-results/
 data/
 generated_sites/
 output/

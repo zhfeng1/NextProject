@@ -52,11 +52,12 @@ services:
       retries: 3
 
   main-service:
+    image: nextproject-main-service:latest
     build:
       context: .
       dockerfile: main_service/Dockerfile
       args:
-        INSTALL_DEV: "true"
+        INSTALL_DEV: "false"
     container_name: nextproject-main-service
     restart: unless-stopped
     volumes:
@@ -77,6 +78,7 @@ services:
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
       - FERNET_KEY=${FERNET_KEY:?FERNET_KEY is required}
       - CODEX_MCP_BRIDGE_URL=http://codex-mcp:8090
+      - CLAUDE_MCP_BRIDGE_URL=http://claude-code-mcp:8091
       - LLM_DIALOG_LOG_ENABLED=${LLM_DIALOG_LOG_ENABLED:-false}
       - LLM_DIALOG_LOG_MAX_CHARS=${LLM_DIALOG_LOG_MAX_CHARS:-4000}
       - SUB_SITE_PORT_START=${SUB_SITE_PORT_START:-19100}
@@ -102,6 +104,8 @@ services:
         condition: service_healthy
       codex-mcp:
         condition: service_started
+      claude-code-mcp:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 15s
@@ -120,15 +124,23 @@ services:
     volumes:
       - ./data/codex_home:/root/.codex
 
-  celery-worker:
+  claude-code-mcp:
     build:
       context: .
-      dockerfile: main_service/Dockerfile
-      args:
-        INSTALL_DEV: "false"
+      dockerfile: claude_code_mcp/Dockerfile
+    container_name: claude-code-mcp
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - ./data/claude_home:/root/.claude
+      - ./data/claude_config:/root/.config/claude-code
+
+  celery-worker:
+    image: nextproject-main-service:latest
     container_name: nextproject-celery-worker
     restart: unless-stopped
-    command: celery -A backend.core.celery_app worker -Q ai-tasks,deploy-tasks,test-tasks -c 4 -l info
+    command: celery -A backend.core.celery_app worker -Q default,ai-tasks,deploy-tasks,test-tasks -c 4 -l info
     volumes:
       - ./data:/shared
       - ./generated_sites:/generated_sites
@@ -160,11 +172,9 @@ services:
       start_period: 30s
 
   celery-beat:
-    build:
-      context: .
-      dockerfile: main_service/Dockerfile
-      args:
-        INSTALL_DEV: "false"
+    profiles:
+      - scheduler
+    image: nextproject-main-service:latest
     container_name: nextproject-celery-beat
     restart: unless-stopped
     command: celery -A backend.core.celery_app beat -l info
@@ -173,15 +183,14 @@ services:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:redis2025@redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:redis2025@redis:6379/1}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - FERNET_KEY=${FERNET_KEY:?FERNET_KEY is required}
     depends_on:
       - redis
 
   flower:
-    build:
-      context: .
-      dockerfile: main_service/Dockerfile
-      args:
-        INSTALL_DEV: "false"
+    profiles:
+      - monitoring
+    image: nextproject-main-service:latest
     container_name: nextproject-flower
     restart: unless-stopped
     command: celery -A backend.core.celery_app flower --port=5555 --basic-auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin2025}
@@ -192,10 +201,13 @@ services:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:redis2025@redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:redis2025@redis:6379/1}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - FERNET_KEY=${FERNET_KEY:?FERNET_KEY is required}
     depends_on:
       - redis
 
   prometheus:
+    profiles:
+      - monitoring
     image: prom/prometheus:latest
     container_name: nextproject-prometheus
     restart: unless-stopped
@@ -204,8 +216,13 @@ services:
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
+    depends_on:
+      - main-service
+      - flower
 
   grafana:
+    profiles:
+      - monitoring
     image: grafana/grafana:latest
     container_name: nextproject-grafana
     restart: unless-stopped
@@ -217,8 +234,12 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
     ports:
       - "20103:3000"   # Grafana 监控面板
+    depends_on:
+      - prometheus
 
   test:
+    profiles:
+      - test
     build:
       context: .
       dockerfile: main_service/Dockerfile

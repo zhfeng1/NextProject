@@ -23,13 +23,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get install -y --no-install-recommends ca-certificates
 
 RUN --mount=type=cache,target=/root/.npm \
-    npm install -g @openai/codex --prefer-offline
+    npm install -g @anthropic-ai/claude-code --prefer-offline
 
-COPY codex_mcp/requirements.txt /app/requirements.txt
+COPY claude_code_mcp/requirements.txt /app/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r /app/requirements.txt
 
-COPY codex_mcp/app /app/app
+COPY claude_code_mcp/app /app/app
 
-EXPOSE 8090
+EXPOSE 8091
 CMD ["python", "/app/app/server.py"]
