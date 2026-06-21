@@ -1,194 +1,177 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import httpx
 import pytest
 
 
+async def _create_project_with_repos(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    project_name: str = "AI Center Project",
+) -> tuple[dict, list[dict]]:
+    project_response = await client.post(
+        "/api/v2/projects",
+        json={"name": project_name, "description": "test project"},
+        headers=auth_headers,
+    )
+    assert project_response.status_code == 200
+    project = project_response.json()["project"]
+
+    repos: list[dict] = []
+    for name in ("frontend", "backend"):
+        repo_response = await client.post(
+            f"/api/v2/projects/{project['id']}/repos",
+            json={"name": name},
+            headers=auth_headers,
+        )
+        assert repo_response.status_code == 200
+        repos.append(repo_response.json()["repo"])
+    return project, repos
+
+
 @pytest.mark.asyncio
-async def test_mcp_service_can_be_enabled_and_tested(
+async def test_mcp_service_scope_configs_can_be_saved_and_tested(
     client: httpx.AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    list_response = await client.get("/api/v2/mcp/services", headers=auth_headers)
+    project, repos = await _create_project_with_repos(client, auth_headers, "MCP Scope Project")
+
+    global_response = await client.put(
+        "/api/v2/mcp/services/context7",
+        json={"enabled": True, "scope_type": "global", "config": {"command": "npx", "args": ["-y", "@upstash/context7-mcp"]}},
+        headers=auth_headers,
+    )
+    assert global_response.status_code == 200
+    assert global_response.json()["service"]["scope_type"] == "global"
+
+    project_response = await client.put(
+        "/api/v2/mcp/services/context7",
+        json={"enabled": True, "scope_type": "project", "project_id": project["id"], "config": {"command": "npx", "args": ["-y", "@upstash/context7-mcp"]}},
+        headers=auth_headers,
+    )
+    assert project_response.status_code == 200
+    assert project_response.json()["service"]["project_id"] == project["id"]
+
+    repo_response = await client.put(
+        "/api/v2/mcp/services/playwright",
+        json={"enabled": True, "scope_type": "repo", "site_id": repos[0]["site_id"], "config": {"command": "npx", "args": ["-y", "@playwright/mcp"]}},
+        headers=auth_headers,
+    )
+    assert repo_response.status_code == 200
+    assert repo_response.json()["service"]["site_id"] == repos[0]["site_id"]
+
+    list_response = await client.get(
+        "/api/v2/mcp/services",
+        params={"project_id": project["id"], "scope_type": "project"},
+        headers=auth_headers,
+    )
     assert list_response.status_code == 200
-    assert any(item["service_id"] == "context7" for item in list_response.json()["services"])
+    assert [item["scope_type"] for item in list_response.json()["services"]] == ["project"]
 
-    bad_response = await client.put(
-        "/api/v2/mcp/services/exa",
-        json={"enabled": True, "config": {}},
+    test_response = await client.post(
+        "/api/v2/mcp/services/context7/test",
+        json={"scope_type": "project", "project_id": project["id"]},
         headers=auth_headers,
     )
-    assert bad_response.status_code == 400
-
-    update_response = await client.put(
-        "/api/v2/mcp/services/exa",
-        json={"enabled": True, "config": {"api_key": "exa-key"}},
-        headers=auth_headers,
-    )
-    assert update_response.status_code == 200
-    assert update_response.json()["service"]["enabled"] is True
-
-    test_response = await client.post("/api/v2/mcp/services/exa/test", headers=auth_headers)
     assert test_response.status_code == 200
     assert test_response.json()["ok"] is True
 
 
 @pytest.mark.asyncio
-async def test_skill_markdown_import_and_binding(
+async def test_skill_scope_import_and_site_resolution(
     client: httpx.AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    await client.post(
-        "/api/v2/sites",
-        json={"site_id": "skill-site", "name": "Skill Site", "auto_start": False},
+    project, repos = await _create_project_with_repos(client, auth_headers, "Skill Scope Project")
+
+    create_response = await client.post(
+        "/api/v2/skills",
+        json={
+            "name": "Repo Vue Helper",
+            "description": "Repo only",
+            "scope_type": "repo",
+            "site_id": repos[0]["site_id"],
+            "content": "# Repo Vue Helper\n\nUse Vue 3 composition APIs.",
+            "triggers": ["vue"],
+            "enabled": True,
+        },
         headers=auth_headers,
     )
+    assert create_response.status_code == 200
+    skill = create_response.json()["skill"]
+    assert skill["scope_type"] == "repo"
+    assert skill["site_id"] == repos[0]["site_id"]
 
     import_response = await client.post(
         "/api/v2/skills/import",
         json={
             "type": "markdown",
-            "markdown": "# Vue Helper\n\n用于 Vue 组件拆分。",
+            "markdown": "# Project API Helper\n\nKeep OpenAPI docs in sync.",
+            "scope_type": "project",
+            "project_id": project["id"],
         },
         headers=auth_headers,
     )
     assert import_response.status_code == 200
-    skill_id = import_response.json()["skill"]["id"]
+    assert import_response.json()["skill"]["scope_type"] == "project"
 
-    bind_response = await client.post(
-        f"/api/v2/skills/{skill_id}/bind-site",
-        json={"site_id": "skill-site", "bind": True},
-        headers=auth_headers,
-    )
-    assert bind_response.status_code == 200
-    assert "skill-site" in bind_response.json()["skill"]["bound_site_ids"]
-
-    site_response = await client.get("/api/v2/skills/site/skill-site", headers=auth_headers)
+    site_response = await client.get(f"/api/v2/skills/site/{repos[0]['site_id']}", headers=auth_headers)
     assert site_response.status_code == 200
-    assert site_response.json()["skills"][0]["name"] == "Vue Helper"
+    names = {item["name"] for item in site_response.json()["skills"]}
+    assert {"Repo Vue Helper", "Project API Helper"} <= names
 
 
 @pytest.mark.asyncio
-async def test_skill_can_import_from_skills_sh(
-    client: httpx.AsyncClient,
-    auth_headers: dict[str, str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def fake_import(url: str) -> dict[str, object]:
-        return {
-            "name": "vue-best-practices",
-            "description": "Imported from skills.sh",
-            "content": "# vue-best-practices\n\nUse Vue 3.",
-            "triggers": ["vue", "skills.sh"],
-        }
-
-    from backend.services.skill_service import skill_service
-
-    monkeypatch.setattr(skill_service, "_import_from_skills_sh", fake_import)
-
-    response = await client.post(
-        "/api/v2/skills/import",
-        json={
-            "type": "skills_sh",
-            "url": "https://skills.sh/hyf0/vue-skills/vue-best-practices",
-        },
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
-    payload = response.json()["skill"]
-    assert payload["source_type"] == "skills.sh"
-    assert payload["source_url"] == "https://skills.sh/hyf0/vue-skills/vue-best-practices"
-
-
-@pytest.mark.asyncio
-async def test_workflow_run_writes_artifacts_under_np(
+async def test_project_task_creates_one_board_item_for_multiple_repos(
     client: httpx.AsyncClient,
     auth_headers: dict[str, str],
     app_module,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    await client.post(
-        "/api/v2/sites",
-        json={"site_id": "wf-site", "name": "Workflow Site", "auto_start": False},
-        headers=auth_headers,
-    )
+    project, repos = await _create_project_with_repos(client, auth_headers, "Task Board Project")
+    monkeypatch.setattr(app_module.task_service, "enqueue_task", lambda task: None)
 
     create_response = await client.post(
-        "/api/v2/workflows/sites/wf-site/runs",
-        json={"name": "首页改版"},
+        f"/api/v2/projects/{project['id']}/tasks",
+        json={
+            "repo_ids": [repo["site_id"] for repo in repos],
+            "provider": "codex",
+            "title": "Update frontend and backend auth",
+            "prompt": "Adjust frontend and backend auth flow together.",
+            "workflow_stages": ["research", "plan", "execute", "review"],
+            "enabled_mcp_services": [],
+            "enabled_skill_ids": [],
+        },
         headers=auth_headers,
     )
     assert create_response.status_code == 200
-    run = create_response.json()["run"]
+    task = create_response.json()["task"]
+    assert task["project_id"] == project["id"]
+    assert task["board_status"] == "queued"
+    assert task["workflow_stages"] == ["research", "plan", "execute", "review"]
+    assert len(task["repositories"]) == 2
 
-    generate_response = await client.post(
-        f"/api/v2/workflows/runs/{run['id']}/generate-stage",
-        json={"stage": "research", "content": "# 研究\n\n梳理现状与目标"},
-        headers=auth_headers,
-    )
-    assert generate_response.status_code == 200
-
-    artifact_path = app_module.site_service.site_root("wf-site") / ".np" / "workflows" / "runs" / run["id"] / "research.md"
-    current_index = app_module.site_service.site_root("wf-site") / ".np" / "workflows" / "current" / "wf-site.json"
-    assert artifact_path.exists()
-    assert current_index.exists()
-    assert "梳理现状与目标" in artifact_path.read_text(encoding="utf-8")
-
-
-@pytest.mark.asyncio
-async def test_workflow_stage_blocks_and_allows_task_creation(
-    client: httpx.AsyncClient,
-    auth_headers: dict[str, str],
-) -> None:
-    await client.post(
-        "/api/v2/sites",
-        json={"site_id": "wf-task-site", "name": "Workflow Task Site", "auto_start": False},
-        headers=auth_headers,
-    )
-    run_response = await client.post(
-        "/api/v2/workflows/sites/wf-task-site/runs",
-        json={"name": "执行约束"},
-        headers=auth_headers,
-    )
-    run_id = run_response.json()["run"]["id"]
-
-    blocked = await client.post(
+    board_response = await client.get(
         "/api/v2/tasks",
-        json={
-            "site_id": "wf-task-site",
-            "task_type": "develop_code",
-            "provider": "codex",
-            "prompt": "先别执行",
-            "workflow_run_id": run_id,
-        },
+        params={"project_id": project["id"], "repo_id": repos[0]["site_id"], "keyword": "auth"},
         headers=auth_headers,
     )
-    assert blocked.status_code == 409
+    assert board_response.status_code == 200
+    board_tasks = board_response.json()["tasks"]
+    assert len(board_tasks) == 1
+    assert board_tasks[0]["id"] == task["id"]
 
-    for stage in ("research", "ideate", "plan"):
-      save_response = await client.post(
-          f"/api/v2/workflows/runs/{run_id}/generate-stage",
-          json={"stage": stage, "content": f"# {stage}\n\ncontent"},
-          headers=auth_headers,
-      )
-      assert save_response.status_code == 200
-      confirm_response = await client.post(
-          f"/api/v2/workflows/runs/{run_id}/confirm-stage",
-          headers=auth_headers,
-      )
-      assert confirm_response.status_code == 200
-
-    allowed = await client.post(
-        "/api/v2/tasks",
-        json={
-            "site_id": "wf-task-site",
-            "task_type": "develop_code",
-            "provider": "codex",
-            "prompt": "现在可以执行",
-            "workflow_run_id": run_id,
-        },
+    blocked_response = await client.patch(
+        f"/api/v2/tasks/{task['id']}/board-status",
+        json={"board_status": "review"},
         headers=auth_headers,
     )
-    assert allowed.status_code == 200
-    assert allowed.json()["task"]["payload"]["workflow_stage"] == "execute"
+    assert blocked_response.status_code == 409
+
+    cancel_response = await client.patch(
+        f"/api/v2/tasks/{task['id']}/board-status",
+        json={"board_status": "canceled"},
+        headers=auth_headers,
+    )
+    assert cancel_response.status_code == 200
+    assert cancel_response.json()["task"]["board_status"] == "canceled"
