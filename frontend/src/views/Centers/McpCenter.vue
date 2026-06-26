@@ -9,11 +9,13 @@ import { Badge } from '@/components/ui/badge'
 import { mcpAPI } from '@/api/mcp'
 import { projectsAPI } from '@/api/projects'
 import type { MCPService, Project } from '@/types/models'
+import { RefreshCw } from 'lucide-vue-next'
 
 const loading = ref(false)
 const savingKey = ref('')
 const testingKey = ref('')
 const message = ref('')
+const messageTone = ref<'info' | 'success' | 'error'>('info')
 const services = ref<MCPService[]>([])
 const projects = ref<Project[]>([])
 const filters = ref({ scope_type: '', project_id: '', site_id: '' })
@@ -57,6 +59,11 @@ async function loadServices() {
   }
 }
 
+function flash(text: string, tone: 'info' | 'success' | 'error') {
+  message.value = text
+  messageTone.value = tone
+}
+
 async function saveService(service: MCPService) {
   const key = draftKey(service)
   savingKey.value = key
@@ -77,9 +84,9 @@ async function saveService(service: MCPService) {
     res.service._draftKey = key
     services.value = services.value.map(item => draftKey(item) === key ? res.service : item)
     configDrafts[key] = { ...(res.service.config || {}) }
-    message.value = `${service.name} 配置已保存`
+    flash(`${service.name} 配置已保存`, 'success')
   } catch (error: any) {
-    message.value = error?.response?.data?.detail || '保存失败'
+    flash(error?.response?.data?.detail || '保存失败', 'error')
   } finally {
     savingKey.value = ''
   }
@@ -96,9 +103,9 @@ async function testService(service: MCPService) {
       site_id: service.site_id,
     })
     services.value = services.value.map(item => draftKey(item) === key ? res.service : item)
-    message.value = `${service.name}: ${res.message}`
+    flash(`${service.name}: ${res.message}`, res.service.last_test_ok ? 'success' : 'error')
   } catch (error: any) {
-    message.value = error?.response?.data?.detail || '测试失败'
+    flash(error?.response?.data?.detail || '测试失败', 'error')
   } finally {
     testingKey.value = ''
   }
@@ -111,59 +118,81 @@ onMounted(loadServices)
   <div class="space-y-6">
     <div class="flex items-start justify-between gap-4">
       <div>
-        <h1 class="text-3xl font-bold tracking-tight">MCP 中心</h1>
-        <p class="mt-2 text-sm text-muted-foreground">按全局、项目、仓库维护任务可挂载的 MCP 服务。</p>
+        <h1 class="text-2xl font-semibold tracking-tight">MCP 中心</h1>
+        <p class="mt-1 text-sm text-muted-foreground">按全局、项目、仓库维护任务可挂载的 MCP 服务</p>
       </div>
-      <Button variant="outline" :disabled="loading" @click="loadServices">{{ loading ? '刷新中...' : '刷新列表' }}</Button>
+      <Button variant="outline" :disabled="loading" @click="loadServices">
+        <RefreshCw class="size-4" :class="loading ? 'animate-spin' : ''" />
+        刷新
+      </Button>
     </div>
 
-    <div class="grid gap-3 rounded-lg border bg-background p-3 md:grid-cols-4">
-      <select v-model="filters.scope_type" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm" @change="loadServices">
+    <!-- Filters -->
+    <div class="grid gap-3 rounded-xl border bg-card p-3 md:grid-cols-4">
+      <select v-model="filters.scope_type" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring" @change="loadServices">
         <option value="">全部作用域</option>
         <option value="global">全局</option>
         <option value="project">项目级</option>
         <option value="repo">仓库级</option>
       </select>
-      <select v-model="filters.project_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm" @change="filters.site_id = ''; loadServices()">
+      <select v-model="filters.project_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring" @change="filters.site_id = ''; loadServices()">
         <option value="">全部项目</option>
         <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.name }}</option>
       </select>
-      <select v-model="filters.site_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm" @change="loadServices">
+      <select v-model="filters.site_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring" @change="loadServices">
         <option value="">全部仓库</option>
         <option v-for="repo in repos" :key="repo.site_id" :value="repo.site_id">{{ repo.name }}</option>
       </select>
       <Button variant="outline" @click="filters = { scope_type: '', project_id: '', site_id: '' }; loadServices()">清空筛选</Button>
     </div>
 
-    <div v-if="message" class="rounded-lg border bg-background px-4 py-3 text-sm">{{ message }}</div>
+    <div
+      v-if="message"
+      class="rounded-lg border px-4 py-3 text-sm"
+      :class="{
+        'border-success/30 bg-success/5 text-success': messageTone === 'success',
+        'border-destructive/30 bg-destructive/5 text-destructive': messageTone === 'error',
+        'border-border bg-muted/40 text-muted-foreground': messageTone === 'info',
+      }"
+    >
+      {{ message }}
+    </div>
 
     <div class="grid gap-4 lg:grid-cols-2">
-      <Card v-for="service in services" :key="draftKey(service)" class="border-border/70">
+      <Card v-for="service in services" :key="draftKey(service)" class="shadow-none">
         <CardHeader class="space-y-3">
           <div class="flex items-start justify-between gap-3">
             <div>
-              <CardTitle class="text-lg">{{ service.name }}</CardTitle>
+              <CardTitle class="flex items-center gap-2 text-base font-semibold">
+                {{ service.name }}
+                <span
+                  class="flex items-center gap-1 text-xs font-medium"
+                  :class="service.enabled ? 'text-success' : 'text-muted-foreground'"
+                >
+                  <span class="status-dot" :data-tone="service.enabled ? 'success' : 'muted'" />
+                  {{ service.enabled ? '启用' : '停用' }}
+                </span>
+              </CardTitle>
               <CardDescription class="mt-1">{{ service.description }}</CardDescription>
             </div>
-            <Badge :variant="service.enabled ? 'default' : 'secondary'">{{ service.enabled ? '已启用' : '未启用' }}</Badge>
           </div>
           <div class="grid gap-2 md:grid-cols-3">
-            <select v-model="service.scope_type" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm">
+            <select v-model="service.scope_type" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring">
               <option value="global">全局</option>
               <option value="project">项目级</option>
               <option value="repo">仓库级</option>
             </select>
-            <select v-model="service.project_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm" :disabled="service.scope_type !== 'project'">
+            <select v-model="service.project_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50" :disabled="service.scope_type !== 'project'">
               <option value="">选择项目</option>
               <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.name }}</option>
             </select>
-            <select v-model="service.site_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm" :disabled="service.scope_type !== 'repo'">
+            <select v-model="service.site_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50" :disabled="service.scope_type !== 'repo'">
               <option value="">选择仓库</option>
               <option v-for="repo in projects.flatMap(item => item.repos || [])" :key="repo.site_id" :value="repo.site_id">{{ repo.name }}</option>
             </select>
           </div>
           <label class="inline-flex items-center gap-2 text-sm text-foreground">
-            <input v-model="service.enabled" type="checkbox" class="h-4 w-4 rounded border-border accent-primary" />
+            <input v-model="service.enabled" type="checkbox" class="size-4 rounded border-border accent-[hsl(var(--primary))]" />
             启用该 MCP 服务
           </label>
         </CardHeader>
@@ -179,26 +208,30 @@ onMounted(loadServices)
               />
             </div>
           </div>
-          <div v-else class="rounded-md border border-dashed border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+          <div v-else class="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
             该服务当前无需额外配置。
           </div>
 
           <div class="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>最近测试:</span>
-            <span>{{ service.last_tested_at ? service.last_tested_at.replace('T', ' ').slice(0, 19) : '尚未测试' }}</span>
-            <span v-if="service.last_test_ok === true" class="text-emerald-600">可用</span>
-            <span v-else-if="service.last_test_ok === false" class="text-red-600">不可用</span>
+            <span>最近测试：</span>
+            <span class="font-mono-data">{{ service.last_tested_at ? service.last_tested_at.replace('T', ' ').slice(0, 19) : '尚未测试' }}</span>
+            <span v-if="service.last_test_ok === true" class="flex items-center gap-1 text-success">
+              <span class="status-dot" data-tone="success" /> 可用
+            </span>
+            <span v-else-if="service.last_test_ok === false" class="flex items-center gap-1 text-destructive">
+              <span class="status-dot" data-tone="danger" /> 不可用
+            </span>
           </div>
-          <div v-if="service.last_error" class="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">
+          <div v-if="service.last_error" class="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
             {{ service.last_error }}
           </div>
 
           <div class="flex gap-2">
             <Button class="flex-1" :disabled="savingKey === draftKey(service)" @click="saveService(service)">
-              {{ savingKey === draftKey(service) ? '保存中...' : '保存配置' }}
+              {{ savingKey === draftKey(service) ? '保存中…' : '保存配置' }}
             </Button>
             <Button variant="outline" :disabled="testingKey === draftKey(service) || !service.id" @click="testService(service)">
-              {{ testingKey === draftKey(service) ? '测试中...' : '测试' }}
+              {{ testingKey === draftKey(service) ? '测试中…' : '测试' }}
             </Button>
           </div>
         </CardContent>

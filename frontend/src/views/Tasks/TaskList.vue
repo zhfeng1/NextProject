@@ -8,17 +8,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { tasksAPI, type TaskLog } from '@/api/tasks'
 import { projectsAPI } from '@/api/projects'
 import type { Project, Task } from '@/types/models'
-import { RotateCcw, Search, XCircle } from 'lucide-vue-next'
+import { RotateCcw, Search, XCircle, RefreshCw, GitBranch, ClipboardList } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 
 const BOARD_COLUMNS = [
-  { key: 'todo', label: '待办' },
-  { key: 'queued', label: '排队' },
-  { key: 'running', label: '运行中' },
-  { key: 'review', label: '待验收' },
-  { key: 'done', label: '完成' },
-  { key: 'failed', label: '失败' },
-  { key: 'canceled', label: '取消' },
+  { key: 'todo', label: '待办', tone: 'muted' },
+  { key: 'queued', label: '排队', tone: 'muted' },
+  { key: 'running', label: '运行中', tone: 'warning' },
+  { key: 'review', label: '待验收', tone: 'primary' },
+  { key: 'done', label: '完成', tone: 'success' },
+  { key: 'failed', label: '失败', tone: 'danger' },
+  { key: 'canceled', label: '取消', tone: 'muted' },
 ]
 
 const STAGE_LABELS: Record<string, string> = {
@@ -67,6 +67,10 @@ function promptOf(task: Task | null) {
   if (!task) return ''
   const payload = task.payload || {}
   return String(payload.prompt || payload.instruction || task.description || task.title || '')
+}
+
+function priorityTone(priority?: string): 'danger' | 'warning' | 'muted' {
+  return ({ urgent: 'danger', high: 'warning', medium: 'muted', low: 'muted' } as const)[priority as 'urgent'] ?? 'muted'
 }
 
 async function loadData() {
@@ -182,32 +186,36 @@ onMounted(loadData)
   <div class="space-y-4">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 class="text-2xl font-bold tracking-tight">任务看板</h1>
-        <p class="text-sm text-muted-foreground">按项目、仓库、工具和状态维护多仓任务。</p>
+        <h1 class="text-2xl font-semibold tracking-tight">任务看板</h1>
+        <p class="mt-1 text-sm text-muted-foreground">按项目、仓库、工具和状态维护多仓任务</p>
       </div>
-      <Button variant="outline" :disabled="loading" @click="loadData">刷新</Button>
+      <Button variant="outline" :disabled="loading" @click="loadData">
+        <RefreshCw class="size-4" :class="loading ? 'animate-spin' : ''" />
+        刷新
+      </Button>
     </div>
 
-    <div class="grid gap-3 rounded-lg border bg-background p-3 md:grid-cols-3 xl:grid-cols-6">
+    <!-- Filters -->
+    <div class="grid gap-3 rounded-xl border bg-card p-3 md:grid-cols-3 xl:grid-cols-6">
       <div class="relative md:col-span-2 xl:col-span-2">
-        <Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Search class="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input v-model="filters.keyword" class="pl-8" placeholder="搜索标题、描述、任务类型" @keyup.enter="loadData" />
       </div>
-      <select v-model="filters.project_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm" @change="filters.repo_id = ''; loadData()">
+      <select v-model="filters.project_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring" @change="filters.repo_id = ''; loadData()">
         <option value="">全部项目</option>
         <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.name }}</option>
       </select>
-      <select v-model="filters.repo_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm" @change="loadData">
+      <select v-model="filters.repo_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring" @change="loadData">
         <option value="">全部仓库</option>
         <option v-for="repo in availableRepos" :key="repo.site_id" :value="repo.site_id">{{ repo.name }}</option>
       </select>
-      <select v-model="filters.provider" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm" @change="loadData">
+      <select v-model="filters.provider" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring" @change="loadData">
         <option value="">全部工具</option>
         <option value="codex">Codex</option>
         <option value="claude_code">Claude Code</option>
         <option value="gemini_cli">Gemini CLI</option>
       </select>
-      <select v-model="filters.priority" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm" @change="loadData">
+      <select v-model="filters.priority" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring" @change="loadData">
         <option value="">全部优先级</option>
         <option value="urgent">紧急</option>
         <option value="high">高</option>
@@ -216,57 +224,73 @@ onMounted(loadData)
       </select>
     </div>
 
+    <!-- Board + detail -->
     <div class="flex gap-4 overflow-x-auto pb-3">
       <section
         v-for="column in BOARD_COLUMNS"
         :key="column.key"
-        class="flex min-h-[58vh] w-72 shrink-0 flex-col rounded-lg border bg-muted/30"
+        class="flex w-72 shrink-0 flex-col rounded-xl border bg-muted/30"
       >
-        <div class="flex items-center justify-between border-b px-3 py-2">
-          <h2 class="text-sm font-semibold">{{ column.label }}</h2>
-          <Badge variant="secondary">{{ groupedTasks[column.key]?.length || 0 }}</Badge>
+        <div class="flex items-center justify-between border-b px-3 py-2.5">
+          <h2 class="flex items-center gap-1.5 text-sm font-semibold">
+            <span class="status-dot" :data-tone="column.tone" />
+            {{ column.label }}
+          </h2>
+          <span class="stat-num text-xs text-muted-foreground">{{ groupedTasks[column.key]?.length || 0 }}</span>
         </div>
         <div class="flex-1 space-y-2 overflow-y-auto p-2">
           <button
             v-for="task in groupedTasks[column.key]"
             :key="task.id"
-            class="w-full rounded-md border bg-background p-3 text-left text-sm shadow-sm transition hover:border-primary/60"
-            :class="selectedTask?.id === task.id ? 'border-primary' : 'border-border'"
+            class="w-full rounded-lg border bg-card p-3 text-left text-sm shadow-none transition hover:border-primary/50"
+            :class="selectedTask?.id === task.id ? 'border-primary ring-1 ring-primary/20' : 'border-border'"
             @click="selectTask(task)"
           >
             <div class="mb-2 flex items-start justify-between gap-2">
               <span class="line-clamp-2 font-medium leading-snug">{{ task.title || promptOf(task) }}</span>
-              <Badge variant="outline" class="shrink-0">{{ task.priority || 'medium' }}</Badge>
+              <span
+                v-if="task.priority"
+                class="flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium"
+                :class="{
+                  'border-destructive/30 bg-destructive/10 text-destructive': priorityTone(task.priority) === 'danger',
+                  'border-warning/30 bg-warning/10 text-warning': priorityTone(task.priority) === 'warning',
+                  'border-border bg-muted text-muted-foreground': priorityTone(task.priority) === 'muted',
+                }"
+              >{{ task.priority }}</span>
             </div>
             <div class="flex flex-wrap gap-1.5">
               <Badge variant="secondary">{{ task.provider || 'system' }}</Badge>
               <Badge v-if="task.project_name" variant="outline">{{ task.project_name }}</Badge>
               <Badge v-for="stage in task.workflow_stages" :key="stage" variant="outline">{{ STAGE_LABELS[stage] || stage }}</Badge>
             </div>
-            <div class="mt-2 text-xs text-muted-foreground">
+            <div class="mt-2 truncate font-mono-data text-xs text-muted-foreground">
               {{ (task.repositories || []).map(repo => repo.name || repo.site_id).join(' / ') || task.site_id }}
             </div>
-            <div class="mt-1 text-xs text-muted-foreground">{{ displayDate(task.created_at) }}</div>
+            <div class="mt-1 font-mono-data text-xs text-muted-foreground">{{ displayDate(task.created_at) }}</div>
           </button>
-          <div v-if="!groupedTasks[column.key]?.length" class="rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground">
+          <div v-if="!groupedTasks[column.key]?.length" class="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
             暂无任务
           </div>
         </div>
       </section>
 
-      <aside class="sticky right-0 min-h-[58vh] w-[420px] shrink-0 rounded-lg border bg-background shadow-sm">
-        <div v-if="!selectedTask" class="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
-          选择一张任务卡查看详情
+      <!-- Detail panel -->
+      <aside class="sticky right-0 flex w-[420px] shrink-0 flex-col rounded-xl border bg-card shadow-none">
+        <div v-if="!selectedTask" class="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
+          <div>
+            <ClipboardList class="mx-auto mb-2 size-8 opacity-30" />
+            选择一张任务卡查看详情
+          </div>
         </div>
         <div v-else class="flex h-full flex-col">
           <div class="border-b p-4">
             <div class="flex items-start justify-between gap-3">
-              <div>
-                <h2 class="text-lg font-semibold leading-tight">{{ selectedTask.title }}</h2>
-                <p class="mt-1 text-xs text-muted-foreground">{{ selectedTask.id }}</p>
+              <div class="min-w-0">
+                <h2 class="text-base font-semibold leading-tight">{{ selectedTask.title }}</h2>
+                <p class="mt-1 truncate font-mono-data text-xs text-muted-foreground">{{ selectedTask.id }}</p>
               </div>
-              <Button variant="ghost" size="sm" @click="selectedTask = null">
-                <XCircle class="h-4 w-4" />
+              <Button variant="ghost" size="icon-sm" class="text-muted-foreground" @click="selectedTask = null">
+                <XCircle class="size-4" />
               </Button>
             </div>
             <div class="mt-3 flex flex-wrap gap-2">
@@ -278,20 +302,26 @@ onMounted(loadData)
 
           <div class="flex-1 space-y-4 overflow-y-auto p-4 text-sm">
             <div>
-              <div class="mb-1 text-xs font-medium text-muted-foreground">Prompt</div>
-              <div class="whitespace-pre-wrap rounded-md bg-muted/40 p-3 text-xs leading-relaxed">{{ promptOf(selectedTask) }}</div>
+              <div class="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Prompt</div>
+              <div class="whitespace-pre-wrap rounded-md bg-muted/50 p-3 text-xs leading-relaxed">{{ promptOf(selectedTask) }}</div>
             </div>
 
             <div>
-              <div class="mb-2 text-xs font-medium text-muted-foreground">参与仓库与 Git 检查点</div>
+              <div class="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">参与仓库与 Git 检查点</div>
               <div class="space-y-2">
                 <div v-for="repo in selectedTask.repositories || []" :key="repo.site_id" class="rounded-md border p-3 text-xs">
-                  <div class="mb-1 flex items-center justify-between gap-2">
-                    <span class="font-medium">{{ repo.name || repo.site_id }}</span>
-                    <Badge :variant="repo.changed ? 'default' : 'secondary'">{{ repo.changed ? '有提交' : '无变更' }}</Badge>
+                  <div class="mb-1.5 flex items-center justify-between gap-2">
+                    <span class="flex items-center gap-1.5 font-medium">
+                      <GitBranch class="size-3 text-muted-foreground" />
+                      {{ repo.name || repo.site_id }}
+                    </span>
+                    <span class="flex items-center gap-1.5">
+                      <span class="status-dot" :data-tone="repo.changed ? 'success' : 'muted'" />
+                      {{ repo.changed ? '有提交' : '无变更' }}
+                    </span>
                   </div>
-                  <div class="text-muted-foreground">before {{ shortSha(repo.before_sha) }} · after {{ shortSha(repo.after_sha) }}</div>
-                  <div v-if="repo.rollback_status" class="mt-1 text-muted-foreground">回滚: {{ repo.rollback_status }}</div>
+                  <div class="font-mono-data text-muted-foreground">before {{ shortSha(repo.before_sha) }} · after {{ shortSha(repo.after_sha) }}</div>
+                  <div v-if="repo.rollback_status" class="mt-1 font-mono-data text-muted-foreground">回滚：{{ repo.rollback_status }}</div>
                 </div>
               </div>
             </div>
@@ -301,26 +331,26 @@ onMounted(loadData)
               <Button variant="outline" :disabled="mutating" @click="moveTask('review')">移到验收</Button>
               <Button v-if="['queued', 'running'].includes(selectedTask.status)" variant="destructive" :disabled="mutating" @click="cancelTask">取消任务</Button>
               <Button variant="outline" :disabled="mutating" @click="rollbackTask">
-                <RotateCcw class="mr-2 h-4 w-4" />
+                <RotateCcw class="size-4" />
                 回滚检查点
               </Button>
             </div>
 
-            <Card>
-              <CardHeader class="px-3 py-2">
-                <CardTitle class="text-sm">日志</CardTitle>
-              </CardHeader>
-              <CardContent class="px-0 pb-0">
-                <div ref="logsRef" class="h-72 overflow-y-auto bg-zinc-950 px-3 py-2 font-mono text-[11px] leading-relaxed">
-                  <div v-for="log in taskLogs" :key="log.id" class="mb-1 flex gap-2">
-                    <span class="shrink-0 text-zinc-500">{{ String(log.ts || '').slice(11, 19) }}</span>
-                    <span class="shrink-0 text-sky-300">[{{ log.level }}]</span>
-                    <span class="whitespace-pre-wrap break-all text-zinc-200">{{ log.line }}</span>
-                  </div>
-                  <div v-if="!taskLogs.length" class="pt-16 text-center text-xs text-zinc-500">暂无日志</div>
+            <div>
+              <div class="mb-1.5 flex items-center justify-between">
+                <div class="text-xs font-medium uppercase tracking-wide text-muted-foreground">日志</div>
+              </div>
+              <div ref="logsRef" class="terminal h-72 overflow-y-auto px-3 py-2 text-[11px] leading-relaxed">
+                <div v-for="log in taskLogs" :key="log.id" class="mb-1 flex gap-2">
+                  <span class="terminal-time shrink-0">{{ String(log.ts || '').slice(11, 19) }}</span>
+                  <span class="shrink-0 font-bold"
+                    :class="{'terminal-info': log.level==='INFO','terminal-warn':log.level==='WARN','terminal-error':log.level==='ERROR'}"
+                  >[{{ log.level }}]</span>
+                  <span class="whitespace-pre-wrap break-all">{{ log.line }}</span>
                 </div>
-              </CardContent>
-            </Card>
+                <div v-if="!taskLogs.length" class="pt-16 text-center text-xs text-zinc-600">暂无日志</div>
+              </div>
+            </div>
           </div>
         </div>
       </aside>

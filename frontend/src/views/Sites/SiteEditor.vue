@@ -14,6 +14,10 @@ import type { Task, TaskLog } from '@/api/tasks'
 import { useIframeBridge } from '@/composables/useIframeBridge'
 import SiteFileBrowserDialog from '@/components/SiteFileBrowserDialog.vue'
 import ConversationPanel from '@/components/ConversationPanel.vue'
+import {
+  Globe, RotateCw, MousePointerSquareDashed, TriangleAlert, Maximize2,
+  FolderOpen, ChevronUp, ChevronDown, X,
+} from 'lucide-vue-next'
 
 // ── 路由 ────────────────────────────────────────────────────────────────────
 const route = useRoute()
@@ -370,19 +374,24 @@ async function refreshTaskHistory() {
   } catch {}
 }
 
-const STATUS_BADGE: Record<string, string> = {
-  queued: 'secondary', running: 'default', success: 'outline',
-  failed: 'destructive', canceled: 'secondary',
-}
 const STATUS_LABEL: Record<string, string> = {
   queued: '排队中', running: '运行中', success: '成功', failed: '失败', canceled: '已取消',
 }
+
+// Status → semantic tone for the unified status-dot language.
+function statusTone(status?: string): 'muted' | 'warning' | 'success' | 'danger' {
+  return ({ queued: 'muted', running: 'warning', success: 'success', failed: 'danger', canceled: 'muted' } as const)[(status || '') as 'queued'] ?? 'muted'
+}
+function statusPulse(status?: string) {
+  return status === 'running' || status === 'queued'
+}
+// Badge classes keyed off the design tokens instead of raw palette names.
 const STATUS_BADGE_CLASS: Record<string, string> = {
-  queued: 'border-zinc-300 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100',
-  running: 'border-sky-400/60 bg-sky-100 text-sky-700 dark:border-sky-500/40 dark:bg-sky-500/15 dark:text-sky-200',
-  success: 'border-emerald-500 bg-emerald-100 text-emerald-700 shadow-sm shadow-emerald-500/20 dark:border-emerald-400/50 dark:bg-emerald-500/20 dark:text-emerald-100 dark:shadow-emerald-500/10',
-  failed: 'border-red-500/60 bg-red-100 text-red-700 dark:border-red-500/40 dark:bg-red-500/15 dark:text-red-200',
-  canceled: 'border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-300',
+  queued: 'border-border bg-muted text-muted-foreground',
+  running: 'border-warning/30 bg-warning/10 text-warning',
+  success: 'border-success/30 bg-success/10 text-success',
+  failed: 'border-destructive/30 bg-destructive/10 text-destructive',
+  canceled: 'border-border bg-muted text-muted-foreground',
 }
 
 // ── 右侧面板 tab ──────────────────────────────────────────────────────────────
@@ -464,37 +473,42 @@ onUnmounted(() => { stopTaskStream() })
 
 <template>
   <div class="flex h-full flex-col overflow-hidden">
-    <div class="flex items-center justify-between border-b bg-background px-4 py-3 shrink-0">
+    <div class="flex shrink-0 items-center justify-between border-b bg-background px-4 py-3">
       <div class="min-w-0">
-        <div class="text-lg font-semibold text-foreground">
+        <div class="text-base font-semibold text-foreground">
           {{ site?.name || '站点编辑' }}
         </div>
-        <div class="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-          <span class="font-mono">站点 ID: {{ site?.site_id || siteId || '—' }}</span>
+        <div class="mt-1 flex items-center gap-2 font-mono-data text-xs text-muted-foreground">
+          站点 ID：{{ site?.site_id || siteId || '—' }}
         </div>
       </div>
-      <Badge
-        :variant="STATUS_BADGE[site?.status] || 'secondary'"
-        :class="['text-[11px] h-6 px-2.5 font-medium shrink-0', STATUS_BADGE_CLASS[site?.status] || STATUS_BADGE_CLASS.queued]"
+      <span
+        class="flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium"
+        :class="STATUS_BADGE_CLASS[site?.status] || STATUS_BADGE_CLASS.queued"
       >
+        <span
+          class="status-dot"
+          :data-tone="statusTone(site?.status)"
+          :data-pulse="statusPulse(site?.status)"
+        />
         {{ siteLoading ? '加载中' : (site?.status ? (STATUS_LABEL[site.status] || site.status) : '不可用') }}
-      </Badge>
+      </span>
     </div>
 
     <div v-if="siteLoading" class="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
-      正在加载站点信息...
+      正在加载站点信息…
     </div>
 
     <div v-else-if="!canOperateOnSite" class="flex flex-1 items-center justify-center p-6">
-      <Card class="w-full max-w-2xl border-red-200 bg-red-50/60 dark:border-red-900/60 dark:bg-red-950/20">
+      <Card class="w-full max-w-2xl border-destructive/30 shadow-none">
         <CardHeader class="space-y-2">
-          <CardTitle class="text-base text-red-700 dark:text-red-300">{{ siteFailureTitle }}</CardTitle>
+          <CardTitle class="text-base text-destructive">{{ siteFailureTitle }}</CardTitle>
         </CardHeader>
         <CardContent class="space-y-4 text-sm">
-          <p class="leading-6 text-red-700/90 dark:text-red-200">{{ siteFailureMessage }}</p>
-          <div class="rounded-md border border-red-200/80 bg-background/80 px-3 py-2 text-xs text-muted-foreground dark:border-red-900/50">
-            <div>当前路径：<span class="font-mono break-all">{{ route.fullPath }}</span></div>
-            <div class="mt-1">站点 ID：<span class="font-mono break-all">{{ siteId || '（空）' }}</span></div>
+          <p class="leading-6 text-destructive/90">{{ siteFailureMessage }}</p>
+          <div class="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-muted-foreground">
+            <div>当前路径：<span class="font-mono-data break-all">{{ route.fullPath }}</span></div>
+            <div class="mt-1">站点 ID：<span class="font-mono-data break-all">{{ siteId || '（空）' }}</span></div>
           </div>
           <div class="flex flex-wrap gap-2">
             <Button size="sm" @click="loadSite" :disabled="!hasValidSiteId">重试加载</Button>
@@ -507,71 +521,68 @@ onUnmounted(() => { stopTaskStream() })
     <div v-else class="flex overflow-hidden" style="height: calc(100vh - 7rem)">
 
       <!-- ── 左侧：iframe 预览 ─────────────────────────────────── -->
-      <div class="flex flex-col flex-1 min-w-0 border-r">
+      <div class="flex min-w-0 flex-1 flex-col border-r">
 
       <!-- Toolbar -->
-      <div class="flex items-center gap-2 h-10 px-2 border-b bg-muted/40 shrink-0">
-        <div class="flex-1 min-w-0 flex items-center gap-1 bg-background border rounded px-2 h-7 text-xs text-muted-foreground">
-          <span class="opacity-50 shrink-0">🌐</span>
-          <span class="truncate">{{ currentUrl || previewUrl }}</span>
+      <div class="flex h-10 shrink-0 items-center gap-2 border-b bg-muted/40 px-2">
+        <div class="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded border bg-background px-2 text-xs text-muted-foreground">
+          <Globe class="size-3 shrink-0 opacity-50" />
+          <span class="truncate font-mono-data">{{ currentUrl || previewUrl }}</span>
         </div>
-        <Button size="icon" variant="ghost" class="h-7 w-7 shrink-0" title="刷新" @click="hardReload">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-          </svg>
+        <Button size="icon-sm" variant="ghost" class="shrink-0" title="刷新" @click="hardReload">
+          <RotateCw class="size-3.5" />
         </Button>
         <Button
-          size="sm" variant="ghost" class="h-7 px-2 text-xs shrink-0 gap-1"
-          :class="pickerMode ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300' : ''"
+          size="sm" variant="ghost" class="h-7 shrink-0 gap-1 text-xs"
+          :class="pickerMode ? 'bg-primary/10 text-primary' : ''"
           title="选区模式" @click="togglePicker"
         >
-          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5"/>
-          </svg>
+          <MousePointerSquareDashed class="size-3" />
           {{ pickerMode ? '取消' : '选区' }}
         </Button>
         <button
           v-if="consoleErrors.length"
-          class="flex items-center gap-1 px-2 h-7 rounded text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 shrink-0"
+          class="flex h-7 shrink-0 items-center gap-1 rounded text-xs border border-destructive/30 bg-destructive/10 px-2 text-destructive"
           @click="showErrors = !showErrors"
-        >⚠ {{ consoleErrors.length }}</button>
-        <span class="text-xs text-muted-foreground truncate max-w-24 shrink-0">{{ site?.name || siteId }}</span>
+        >
+          <TriangleAlert class="size-3" /> {{ consoleErrors.length }}
+        </button>
+        <span class="max-w-24 shrink-0 truncate text-xs text-muted-foreground">{{ site?.name || siteId }}</span>
       </div>
 
       <!-- iframe -->
-      <div class="flex-1 overflow-hidden relative">
+      <div class="relative flex-1 overflow-hidden">
         <iframe
           v-if="previewUrl"
           :key="iframeKey"
           ref="iframeRef"
           :src="previewUrl"
-          class="w-full h-full border-0 bg-white"
+          class="h-full w-full border-0 bg-white"
           :class="pickerMode ? 'cursor-crosshair' : ''"
           @load="onIframeLoad"
           sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
         />
-        <div v-else class="flex items-center justify-center h-full text-muted-foreground text-sm">
-          加载站点中...
+        <div v-else class="flex h-full items-center justify-center text-sm text-muted-foreground">
+          加载站点中…
         </div>
       </div>
       </div>
 
       <!-- ── 右侧：操作面板 ────────────────────────────────────── -->
-      <div class="w-[22rem] shrink-0 flex flex-col overflow-hidden">
+      <div class="flex w-[22rem] shrink-0 flex-col overflow-hidden">
 
         <!-- Tab bar -->
-        <div class="flex border-b shrink-0 bg-muted/20">
+        <div class="flex shrink-0 border-b bg-muted/20">
           <button
             class="flex-1 py-2 text-xs font-medium transition-colors"
-            :class="rightTab === 'chat' ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground hover:text-foreground'"
+            :class="rightTab === 'chat' ? 'border-b-2 border-primary text-foreground' : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground'"
             @click="rightTab = 'chat'"
-          >💬 对话</button>
+          >对话</button>
           <button
             class="flex-1 py-2 text-xs font-medium transition-colors"
-            :class="rightTab === 'classic' ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground hover:text-foreground'"
+            :class="rightTab === 'classic' ? 'border-b-2 border-primary text-foreground' : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground'"
             @click="rightTab = 'classic'"
-          >⚡ 快速</button>
+          >快速</button>
         </div>
 
         <!-- Chat tab -->
@@ -585,83 +596,83 @@ onUnmounted(() => { stopTaskStream() })
             :provider="provider"
             @task-created="onConvTaskCreated"
           />
-          <div v-else class="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">
+          <div v-else class="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
             站点未加载成功，暂不可发起对话任务。
           </div>
         </div>
 
         <!-- Classic tab -->
-        <div v-if="rightTab === 'classic'" class="flex-1 overflow-y-auto p-3 space-y-3">
+        <div v-if="rightTab === 'classic'" class="flex-1 space-y-3 overflow-y-auto p-3">
 
         <!-- ① 需求输入 -->
-        <Card>
-          <CardHeader class="py-2 px-3 pb-1">
+        <Card class="shadow-none">
+          <CardHeader class="px-3 pb-1 pt-2">
             <CardTitle class="text-sm">需求输入</CardTitle>
           </CardHeader>
-          <CardContent class="px-3 pb-3 space-y-2">
+          <CardContent class="space-y-2 px-3 pb-3">
             <textarea
               v-model="userInput" rows="4"
-              placeholder="描述你想修改的内容，AI 会结合当前页面和历史需求一起处理..."
-              class="w-full resize-none rounded border bg-muted/30 px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring font-sans"
+              placeholder="描述你想修改的内容，AI 会结合当前页面和历史需求一起处理…"
+              class="w-full resize-none rounded-md border border-input bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring"
             />
             <div class="flex gap-1">
               <button
                 v-for="p in PROVIDERS" :key="p.value" @click="provider = p.value"
-                class="flex-1 py-1 text-xs rounded border transition-colors"
+                class="flex-1 rounded-md border py-1 text-xs transition-colors"
                 :class="provider === p.value
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-background hover:bg-muted border-border text-foreground'"
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-background text-foreground hover:bg-muted'"
               >{{ p.label }}</button>
             </div>
             <Button class="w-full" size="sm" :disabled="submitting || !userInput.trim() || !canOperateOnSite" @click="submitRequirement">
-              {{ submitting ? '提交中...' : '提交给 AI 编码' }}
+              {{ submitting ? '提交中…' : '提交给 AI 编码' }}
             </Button>
           </CardContent>
         </Card>
 
         <!-- ② 当前上下文 -->
-        <Card>
-          <CardHeader class="py-2 px-3 pb-1">
+        <Card class="shadow-none">
+          <CardHeader class="px-3 pb-1 pt-2">
             <CardTitle class="text-sm">上下文信息</CardTitle>
           </CardHeader>
-          <CardContent class="px-3 pb-3 space-y-2 text-xs">
+          <CardContent class="space-y-2 px-3 pb-3 text-xs">
             <div class="space-y-0.5">
               <span class="text-muted-foreground">当前 URL</span>
-              <div class="truncate font-mono bg-muted/40 rounded px-1.5 py-0.5 text-[11px]">
+              <div class="truncate rounded bg-muted px-1.5 py-0.5 font-mono-data text-[11px]">
                 {{ agentContextUrl || '（等待 iframe 加载）' }}
               </div>
             </div>
             <div v-if="pickedElement">
-              <div class="flex items-center justify-between mb-1">
+              <div class="mb-1 flex items-center justify-between">
                 <span class="text-muted-foreground">选中元素 XPath</span>
-                <button class="text-muted-foreground hover:text-foreground text-[11px]" @click="clearPicked">✕ 清除</button>
+                <button class="text-[11px] text-muted-foreground hover:text-foreground" @click="clearPicked">✕ 清除</button>
               </div>
-              <div class="font-mono bg-muted/40 rounded px-1.5 py-0.5 text-[11px] break-all mb-1.5">{{ pickedElement.xpath }}</div>
+              <div class="mb-1.5 break-all rounded bg-muted px-1.5 py-0.5 font-mono-data text-[11px]">{{ pickedElement.xpath }}</div>
               <img
                 v-if="pickedElement.screenshotDataUrl"
                 :src="pickedElement.screenshotDataUrl"
-                class="rounded border max-h-28 w-auto object-contain"
+                class="max-h-28 w-auto rounded border object-contain"
                 alt="元素截图"
               />
               <details v-else>
-                <summary class="cursor-pointer text-muted-foreground text-[11px]">查看 outerHTML</summary>
-                <pre class="mt-1 bg-muted/40 rounded p-1 overflow-auto max-h-20 text-[10px] whitespace-pre-wrap">{{ pickedElement.outerHTML }}</pre>
+                <summary class="cursor-pointer text-[11px] text-muted-foreground">查看 outerHTML</summary>
+                <pre class="mt-1 max-h-20 overflow-auto whitespace-pre-wrap rounded bg-muted p-1 text-[10px]">{{ pickedElement.outerHTML }}</pre>
               </details>
             </div>
-            <div v-else class="text-muted-foreground italic text-[11px]">
+            <div v-else class="italic text-[11px] text-muted-foreground">
               点击工具栏「选区」后在左侧页面点选元素
             </div>
           </CardContent>
         </Card>
 
         <!-- ③ 控制台错误 -->
-        <Card v-if="showErrors || consoleErrors.length">
-          <CardHeader class="py-2 px-3 pb-1">
+        <Card v-if="showErrors || consoleErrors.length" class="shadow-none">
+          <CardHeader class="px-3 pb-1 pt-2">
             <div class="flex items-center justify-between">
-              <CardTitle class="text-sm flex items-center gap-1.5">
-                <span class="inline-block h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+              <CardTitle class="flex items-center gap-1.5 text-sm">
+                <span class="status-dot" data-tone="danger" data-pulse="true" />
                 控制台错误
-                <Badge variant="destructive" class="text-[10px] h-4 px-1">{{ consoleErrors.length }}</Badge>
+                <Badge variant="destructive" class="h-4 px-1 text-[10px]">{{ consoleErrors.length }}</Badge>
               </CardTitle>
               <div class="flex gap-1">
                 <Button size="sm" variant="outline" class="h-6 px-2 text-[11px]" @click="fixErrors">立即修复</Button>
@@ -670,39 +681,42 @@ onUnmounted(() => { stopTaskStream() })
             </div>
           </CardHeader>
           <CardContent class="px-3 pb-3">
-            <div class="space-y-1 max-h-36 overflow-y-auto">
+            <div class="max-h-36 space-y-1 overflow-y-auto">
               <div
                 v-for="(err, i) in consoleErrors" :key="i"
-                class="flex gap-1.5 text-[11px] bg-red-50 dark:bg-red-950/30 rounded px-2 py-1"
+                class="flex gap-1.5 rounded bg-destructive/5 px-2 py-1 text-[11px]"
               >
-                <span class="shrink-0 font-bold" :class="err.type === 'network' ? 'text-orange-500' : 'text-red-500'">
+                <span class="shrink-0 font-mono-data font-bold text-destructive">
                   {{ err.type === 'network' ? 'NET' : 'JS' }}
                 </span>
-                <span class="text-red-700 dark:text-red-300 break-all flex-1">{{ err.message }}</span>
-                <span class="shrink-0 text-muted-foreground">{{ err.time.slice(11, 19) }}</span>
+                <span class="flex-1 break-all text-destructive/90">{{ err.message }}</span>
+                <span class="shrink-0 font-mono-data text-muted-foreground">{{ err.time.slice(11, 19) }}</span>
               </div>
             </div>
           </CardContent>
         </Card>
 
         <!-- ④ 任务日志 -->
-        <Card v-if="currentTask || taskLogs.length">
-          <CardHeader class="py-2 px-3 pb-1">
+        <Card v-if="currentTask || taskLogs.length" class="shadow-none">
+          <CardHeader class="px-3 pb-1 pt-2">
             <div class="flex items-center justify-between">
-              <CardTitle class="text-sm flex items-center gap-1.5">
+              <CardTitle class="flex items-center gap-1.5 text-sm">
                 任务日志
-                <Badge
-                  :variant="STATUS_BADGE[taskStatus] || 'secondary'"
-                  :class="['text-[11px] h-5 px-2 font-medium', STATUS_BADGE_CLASS[taskStatus]]"
+                <span
+                  class="flex items-center gap-1 rounded px-2 text-[11px] font-medium"
+                  :class="STATUS_BADGE_CLASS[taskStatus]"
                 >
+                  <span
+                    class="status-dot"
+                    :data-tone="statusTone(taskStatus)"
+                    :data-pulse="statusPulse(taskStatus)"
+                  />
                   {{ STATUS_LABEL[taskStatus] || taskStatus || '—' }}
-                </Badge>
+                </span>
               </CardTitle>
               <div class="flex gap-1">
                 <Button size="sm" variant="ghost" class="h-6 w-6 p-0" title="放大" @click="logsExpanded = true">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5"/>
-                  </svg>
+                  <Maximize2 class="size-3.5" />
                 </Button>
                 <Button size="sm" variant="ghost" class="h-6 px-2 text-[11px]" @click="taskLogs = []">清空</Button>
               </div>
@@ -711,67 +725,75 @@ onUnmounted(() => { stopTaskStream() })
           <CardContent class="px-0 pb-0">
             <div
               ref="logsRef"
-              class="h-52 overflow-y-auto bg-zinc-950 px-3 py-2 font-mono text-[11px] leading-relaxed"
+              class="terminal h-52 overflow-y-auto px-3 py-2 text-[11px] leading-relaxed"
             >
-              <div v-for="log in taskLogs" :key="log.id" class="flex gap-1.5 mb-0.5">
-                <span class="shrink-0 text-zinc-500">{{ String(log.ts || '').slice(11, 19) }}</span>
+              <div v-for="log in taskLogs" :key="log.id" class="mb-0.5 flex gap-1.5">
+                <span class="terminal-time shrink-0">{{ String(log.ts || '').slice(11, 19) }}</span>
                 <span class="shrink-0 font-bold"
-                  :class="{'text-sky-400': log.level==='INFO','text-orange-400':log.level==='WARN','text-red-400':log.level==='ERROR'}"
+                  :class="{'terminal-info': log.level==='INFO','terminal-warn':log.level==='WARN','terminal-error':log.level==='ERROR'}"
                 >[{{ log.level }}]</span>
-                <span class="text-zinc-300 whitespace-pre-wrap break-all">{{ log.line }}</span>
+                <span class="whitespace-pre-wrap break-all">{{ log.line }}</span>
               </div>
-              <div v-if="!taskLogs.length" class="text-zinc-600 text-center pt-10 text-xs">等待任务输出...</div>
+              <div v-if="!taskLogs.length" class="pt-10 text-center text-xs text-zinc-600">等待任务输出…</div>
             </div>
           </CardContent>
         </Card>
 
         <!-- ⑤ 历史需求文档 -->
-        <Card v-if="requirementsDoc">
-          <CardHeader class="py-2 px-3 pb-1 cursor-pointer select-none" @click="showRequirements = !showRequirements">
+        <Card v-if="requirementsDoc" class="shadow-none">
+          <CardHeader class="cursor-pointer select-none px-3 pb-1 pt-2" @click="showRequirements = !showRequirements">
             <div class="flex items-center justify-between">
               <CardTitle class="text-sm">历史需求文档</CardTitle>
-              <span class="text-muted-foreground text-xs">{{ showRequirements ? '▲' : '▼' }}</span>
+              <ChevronUp v-if="showRequirements" class="size-4 text-muted-foreground" />
+              <ChevronDown v-else class="size-4 text-muted-foreground" />
             </div>
           </CardHeader>
           <CardContent v-if="showRequirements" class="px-3 pb-3">
-            <pre class="text-[11px] whitespace-pre-wrap text-muted-foreground bg-muted/30 rounded p-2 max-h-44 overflow-y-auto leading-relaxed">{{ requirementsDoc }}</pre>
+            <pre class="max-h-44 overflow-y-auto whitespace-pre-wrap rounded bg-muted p-2 text-[11px] leading-relaxed text-muted-foreground">{{ requirementsDoc }}</pre>
           </CardContent>
         </Card>
 
         <!-- ⑥ 快捷操作 + 最近任务 -->
-        <Card>
-          <CardHeader class="py-2 px-3 pb-1">
+        <Card class="shadow-none">
+          <CardHeader class="px-3 pb-1 pt-2">
             <CardTitle class="text-sm">快捷操作</CardTitle>
           </CardHeader>
-          <CardContent class="px-3 pb-3 space-y-2">
+          <CardContent class="space-y-2 px-3 pb-3">
             <Button variant="outline" size="sm" class="w-full text-xs" :disabled="restarting || !canOperateOnSite" @click="restartSite">
-              {{ restarting ? '重启中...' : '🔄 重启站点进程' }}
+              <RotateCw class="size-3.5" />
+              {{ restarting ? '重启中…' : '重启站点进程' }}
             </Button>
             <Button variant="outline" size="sm" class="w-full text-xs" :disabled="!canOperateOnSite" @click="fileBrowserOpen = true">
-              📁 打开文件浏览
+              <FolderOpen class="size-3.5" />
+              打开文件浏览
             </Button>
             <div v-if="taskHistory.length">
               <Separator class="my-2" />
-              <p class="text-xs text-muted-foreground mb-1.5">最近任务</p>
+              <p class="mb-1.5 text-xs text-muted-foreground">最近任务</p>
               <div class="space-y-1">
                 <button
                   v-for="t in taskHistory" :key="t.id"
                   type="button"
-                  class="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-[11px] text-left transition-colors hover:bg-muted/50"
-                  :class="currentTask?.id === t.id ? 'bg-muted/60' : ''"
+                  class="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] transition-colors hover:bg-muted/60"
+                  :class="currentTask?.id === t.id ? 'bg-muted/80' : ''"
                   @click="inspectTask(t)"
                 >
-                  <Badge
-                    :variant="STATUS_BADGE[t.status] || 'secondary'"
-                    :class="['text-[11px] h-5 px-2 font-medium shrink-0', STATUS_BADGE_CLASS[t.status]]"
+                  <span
+                    class="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 font-medium"
+                    :class="STATUS_BADGE_CLASS[t.status]"
                   >
+                    <span
+                      class="status-dot"
+                      :data-tone="statusTone(t.status)"
+                      :data-pulse="statusPulse(t.status)"
+                    />
                     {{ STATUS_LABEL[t.status] || t.status }}
-                  </Badge>
-                  <span class="text-muted-foreground truncate">{{ t.provider || t.task_type }}</span>
-                  <span class="shrink-0 rounded border border-border/70 px-1.5 py-0.5 text-[10px] text-foreground/80">
-                    查看日志
                   </span>
-                  <span class="ml-auto shrink-0 text-muted-foreground">{{ String(t.created_at || '').slice(0,16).replace('T',' ') }}</span>
+                  <span class="truncate text-muted-foreground">{{ t.provider || t.task_type }}</span>
+                  <span class="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-foreground/80">
+                    日志
+                  </span>
+                  <span class="ml-auto shrink-0 font-mono-data text-muted-foreground">{{ String(t.created_at || '').slice(0,16).replace('T',' ') }}</span>
                 </button>
               </div>
             </div>
@@ -790,16 +812,21 @@ onUnmounted(() => { stopTaskStream() })
         @click.self="logsExpanded = false"
         @keydown.escape="logsExpanded = false"
       >
-        <div class="flex h-[min(88vh,60rem)] w-[min(94vw,92rem)] flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl">
-          <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-3 shrink-0">
+        <div class="flex h-[min(88vh,60rem)] w-[min(94vw,92rem)] flex-col overflow-hidden rounded-xl border border-border bg-zinc-950 shadow-2xl">
+          <div class="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-3">
             <div class="flex items-center gap-2 text-sm text-zinc-300">
               <span class="font-medium">任务日志</span>
-              <Badge
-                :variant="STATUS_BADGE[taskStatus] || 'secondary'"
-                :class="['text-[11px] h-5 px-2 font-medium', STATUS_BADGE_CLASS[taskStatus]]"
+              <span
+                class="flex items-center gap-1 rounded px-2 text-[11px] font-medium"
+                :class="STATUS_BADGE_CLASS[taskStatus]"
               >
+                <span
+                  class="status-dot"
+                  :data-tone="statusTone(taskStatus)"
+                  :data-pulse="statusPulse(taskStatus)"
+                />
                 {{ STATUS_LABEL[taskStatus] || taskStatus || '—' }}
-              </Badge>
+              </span>
             </div>
             <div class="flex items-center gap-2">
               <Button
@@ -811,23 +838,21 @@ onUnmounted(() => { stopTaskStream() })
               >
                 Codex 输出
               </Button>
-              <Button size="sm" variant="ghost" class="h-7 px-2 text-xs text-zinc-400 hover:text-zinc-200" @click="logsExpanded = false">
-                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
+              <Button size="sm" variant="ghost" class="h-7 gap-1 px-2 text-xs text-zinc-400 hover:text-zinc-200" @click="logsExpanded = false">
+                <X class="size-4" />
                 关闭 (Esc)
               </Button>
             </div>
           </div>
-          <div ref="expandedLogsRef" class="flex-1 overflow-y-auto px-5 py-4 font-mono text-xs leading-relaxed">
-            <div v-for="log in taskLogs" :key="log.id" class="flex gap-2 mb-0.5">
-              <span class="shrink-0 text-zinc-500">{{ String(log.ts || '').slice(11, 19) }}</span>
+          <div ref="expandedLogsRef" class="terminal flex-1 overflow-y-auto px-5 py-4 text-xs leading-relaxed">
+            <div v-for="log in taskLogs" :key="log.id" class="mb-0.5 flex gap-2">
+              <span class="terminal-time shrink-0">{{ String(log.ts || '').slice(11, 19) }}</span>
               <span class="shrink-0 font-bold"
-                :class="{'text-sky-400': log.level==='INFO','text-orange-400':log.level==='WARN','text-red-400':log.level==='ERROR'}"
+                :class="{'terminal-info': log.level==='INFO','terminal-warn':log.level==='WARN','terminal-error':log.level==='ERROR'}"
               >[{{ log.level }}]</span>
-              <span class="text-zinc-300 whitespace-pre-wrap break-all">{{ log.line }}</span>
+              <span class="whitespace-pre-wrap break-all">{{ log.line }}</span>
             </div>
-            <div v-if="!taskLogs.length" class="text-zinc-600 text-center pt-20">等待任务输出...</div>
+            <div v-if="!taskLogs.length" class="pt-20 text-center text-zinc-600">等待任务输出…</div>
           </div>
         </div>
       </div>
@@ -840,17 +865,22 @@ onUnmounted(() => { stopTaskStream() })
         @click.self="providerOutputOpen = false"
         @keydown.escape="providerOutputOpen = false"
       >
-        <div class="flex h-[min(88vh,60rem)] w-[min(94vw,100rem)] flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl">
-          <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-3 shrink-0">
+        <div class="flex h-[min(88vh,60rem)] w-[min(94vw,100rem)] flex-col overflow-hidden rounded-xl border border-border bg-zinc-950 shadow-2xl">
+          <div class="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-3">
             <div class="min-w-0">
               <div class="flex items-center gap-2 text-sm text-zinc-300">
                 <span class="font-medium">Codex 输出</span>
-                <Badge
-                  :variant="STATUS_BADGE[taskStatus] || 'secondary'"
-                  :class="['text-[11px] h-5 px-2 font-medium', STATUS_BADGE_CLASS[taskStatus]]"
+                <span
+                  class="flex items-center gap-1 rounded px-2 text-[11px] font-medium"
+                  :class="STATUS_BADGE_CLASS[taskStatus]"
                 >
+                  <span
+                    class="status-dot"
+                    :data-tone="statusTone(taskStatus)"
+                    :data-pulse="statusPulse(taskStatus)"
+                  />
                   {{ STATUS_LABEL[taskStatus] || taskStatus || '—' }}
-                </Badge>
+                </span>
               </div>
               <p class="mt-1 text-xs text-zinc-500">这里显示 Codex 的原始终端输出，方便判断是否需要你的进一步输入。</p>
             </div>
@@ -863,7 +893,7 @@ onUnmounted(() => { stopTaskStream() })
               </Button>
             </div>
           </div>
-          <div ref="providerOutputRef" class="flex-1 overflow-y-auto px-5 py-4 font-mono text-xs leading-relaxed text-zinc-300">
+          <div ref="providerOutputRef" class="terminal flex-1 overflow-y-auto px-5 py-4 text-xs leading-relaxed">
             <div v-if="providerOutputTruncated" class="mb-3 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
               输出较长，当前窗口仅展示最近一部分内容。
             </div>

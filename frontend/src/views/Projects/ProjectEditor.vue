@@ -5,7 +5,7 @@ import { useProjectStore } from '@/stores/project'
 import { projectsAPI } from '@/api/projects'
 import RepoTabs from './components/RepoTabs.vue'
 import RepoFileTree from './components/RepoFileTree.vue'
-import { ArrowLeft } from 'lucide-vue-next'
+import { ArrowLeft, X } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import CodeEditor from '@/components/Editor/CodeEditor.vue'
 import BuildLogModal from '@/components/BuildLogModal.vue'
@@ -26,13 +26,11 @@ const router = useRouter()
 const projectStore = useProjectStore()
 const projectId = route.params.id as string
 
-// 当前选中的仓库
 const activeRepoId = ref('')
 
-// 已打开的编辑器标签（只读浏览）
 interface EditorTab {
-  id: string          // 唯一 key: `${repoId}:${path}`
-  label: string       // 显示: `[repoName] filename`
+  id: string
+  label: string
   repoId: string
   repoName: string
   path: string
@@ -54,7 +52,6 @@ onMounted(async () => {
 
 function handleSelectRepo(repoId: string) {
   activeRepoId.value = repoId
-  // 切换仓库不关闭已打开标签 (D-12)
 }
 
 function detectLanguage(filename: string): string {
@@ -71,14 +68,12 @@ function detectLanguage(filename: string): string {
 async function handleOpenFile(payload: { path: string; repoId: string; repoName: string }) {
   const tabId = `${payload.repoId}:${payload.path}`
 
-  // 已打开则切换到该标签
   const existing = openTabs.value.find(t => t.id === tabId)
   if (existing) {
     activeTabId.value = tabId
     return
   }
 
-  // 获取文件内容
   let res: any
   try {
     res = await projectsAPI.getRepoFile(projectId, payload.repoId, payload.path)
@@ -88,7 +83,6 @@ async function handleOpenFile(payload: { path: string; repoId: string; repoName:
     return
   }
 
-  // 二进制文件检测 (R-21)
   if (res.binary) {
     const { toast } = await import('vue-sonner')
     toast.warning('该文件为二进制文件，无法预览')
@@ -121,11 +115,11 @@ const activeTabContent = computed(() => openTabs.value.find(t => t.id === active
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
-    <!-- 顶部导航栏 -->
-    <div class="flex items-center gap-2 px-4 py-2 border-b bg-muted/30">
-      <Button variant="ghost" size="sm" @click="router.push(`/projects/${projectId}`)">
-        <ArrowLeft class="w-4 h-4 mr-1" />
+  <div class="flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden">
+    <!-- Toolbar -->
+    <div class="flex shrink-0 items-center gap-2 border-b bg-background px-4 py-2">
+      <Button variant="ghost" size="sm" class="text-muted-foreground" @click="router.push(`/projects/${projectId}`)">
+        <ArrowLeft class="size-4" />
         返回项目
       </Button>
       <span class="text-sm font-medium" v-if="projectStore.currentProject">
@@ -133,7 +127,7 @@ const activeTabContent = computed(() => openTabs.value.find(t => t.id === active
       </span>
     </div>
 
-    <!-- 仓库 Tabs -->
+    <!-- Repo tabs -->
     <RepoTabs
       :repos="repos"
       :activeRepoId="activeRepoId"
@@ -142,8 +136,8 @@ const activeTabContent = computed(() => openTabs.value.find(t => t.id === active
     />
 
     <div class="flex flex-1 overflow-hidden">
-      <!-- 左侧文件树 -->
-      <div class="w-64 border-r overflow-y-auto p-2" v-if="activeRepo">
+      <!-- File tree -->
+      <div class="w-64 shrink-0 overflow-y-auto border-r p-2" v-if="activeRepo">
         <RepoFileTree
           :projectId="projectId"
           :repoId="activeRepoId"
@@ -152,23 +146,28 @@ const activeTabContent = computed(() => openTabs.value.find(t => t.id === active
         />
       </div>
 
-      <!-- 右侧编辑区（只读浏览） -->
-      <div class="flex-1 flex flex-col overflow-hidden">
-        <!-- 编辑器标签栏 -->
-        <div class="flex border-b overflow-x-auto bg-muted/30" v-if="openTabs.length">
+      <!-- Editor area -->
+      <div class="flex flex-1 flex-col overflow-hidden">
+        <!-- Open-file tabs -->
+        <div class="flex shrink-0 overflow-x-auto border-b bg-muted/30" v-if="openTabs.length">
           <button
             v-for="tab in openTabs"
             :key="tab.id"
-            class="px-3 py-1.5 text-xs whitespace-nowrap border-r flex items-center gap-1"
-            :class="activeTabId === tab.id ? 'bg-background font-medium' : 'text-muted-foreground hover:bg-background/50'"
+            class="group flex items-center gap-2 whitespace-nowrap border-r px-3 py-1.5 text-xs transition-colors"
+            :class="activeTabId === tab.id ? 'bg-background font-medium text-foreground' : 'text-muted-foreground hover:bg-background/50'"
             @click="activeTabId = tab.id"
           >
-            {{ tab.label }}
-            <span class="ml-1 hover:text-destructive" @click.stop="handleCloseTab(tab.id)">&times;</span>
+            <span>{{ tab.label }}</span>
+            <span
+              class="rounded p-0.5 text-muted-foreground opacity-0 hover:bg-muted hover:text-destructive group-hover:opacity-100"
+              @click.stop="handleCloseTab(tab.id)"
+            >
+              <X class="size-3" />
+            </span>
           </button>
         </div>
 
-        <!-- Monaco 编辑器区域（只读） -->
+        <!-- Monaco -->
         <div class="flex-1 overflow-hidden" v-if="activeTabContent">
           <CodeEditor
             :modelValue="activeTabContent.content"
@@ -177,8 +176,8 @@ const activeTabContent = computed(() => openTabs.value.find(t => t.id === active
             theme="vs-dark"
           />
         </div>
-        <div v-else class="flex-1 flex items-center justify-center text-muted-foreground">
-          选择文件查看内容
+        <div v-else class="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+          从左侧选择文件查看内容
         </div>
       </div>
     </div>

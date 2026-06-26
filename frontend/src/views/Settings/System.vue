@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { providersAPI, type LLMProvider } from '@/api/providers'
 import { projectsAPI } from '@/api/projects'
 import type { Project } from '@/types/models'
+import { Plus, Check, CircleAlert, Globe, FolderKanban } from 'lucide-vue-next'
 
 type ApiFormat = 'responses' | 'messages'
 
@@ -19,6 +20,7 @@ interface ProviderUI extends LLMProvider {
   fetching: boolean
   verifying: string
   msg: string
+  msgOk: boolean
 }
 
 const pageLoading = ref(false)
@@ -49,6 +51,7 @@ function toProviderUI(provider: LLMProvider): ProviderUI {
     fetching: false,
     verifying: '',
     msg: '',
+    msgOk: false,
   }
 }
 
@@ -100,6 +103,7 @@ function toggleFormat(provider: ProviderUI, format: ApiFormat, checked: boolean)
   }
   if (current.length === 1 && current[0] === format) {
     provider.msg = '至少保留一种 API 格式'
+    provider.msgOk = false
     return
   }
   provider.formats = current.filter(item => item !== format)
@@ -128,8 +132,10 @@ async function saveProvider(provider: ProviderUI) {
     })
     Object.assign(provider, toProviderUI(res.provider))
     provider.msg = '已保存'
+    provider.msgOk = true
   } catch (e: any) {
     provider.msg = e?.response?.data?.detail || '保存失败'
+    provider.msgOk = false
   } finally {
     provider.saving = false
   }
@@ -142,6 +148,7 @@ async function removeProvider(provider: ProviderUI) {
     providers.value = providers.value.filter(item => item.id !== provider.id)
   } catch (e: any) {
     provider.msg = e?.response?.data?.detail || '删除失败'
+    provider.msgOk = false
   }
 }
 
@@ -156,11 +163,14 @@ async function fetchModels(provider: ProviderUI) {
     if (res.ok && res.models?.length) {
       provider.availableModels = res.models
       provider.msg = `获取到 ${res.models.length} 个模型`
+      provider.msgOk = true
     } else {
       provider.msg = res.error || '未获取到模型，可手动输入'
+      provider.msgOk = false
     }
   } catch (e: any) {
     provider.msg = e?.response?.data?.detail || '拉取失败'
+    provider.msgOk = false
   } finally {
     provider.fetching = false
   }
@@ -188,8 +198,10 @@ async function verifyModel(provider: ProviderUI, model: string, format: ApiForma
     if (provider.api_key && !provider.api_key.includes('****')) params.api_key = provider.api_key
     const res = await providersAPI.verifyModel(params)
     provider.msg = res.ok ? `${model} (${format}): 连通正常` : `${model} (${format}): ${res.error || '验证失败'}`
+    provider.msgOk = res.ok
   } catch (e: any) {
     provider.msg = `${model} (${format}): ${e?.response?.data?.detail || '验证失败'}`
+    provider.msgOk = false
   } finally {
     provider.verifying = ''
   }
@@ -197,34 +209,41 @@ async function verifyModel(provider: ProviderUI, model: string, format: ApiForma
 </script>
 
 <template>
-  <div class="space-y-6 max-w-6xl">
+  <div class="max-w-6xl space-y-6">
     <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
       <div>
-        <h1 class="text-3xl font-bold tracking-tight">系统设置</h1>
-        <p class="text-sm text-muted-foreground mt-1">维护全局和项目级模型 Provider，任务执行时项目级配置优先。</p>
+        <h1 class="text-2xl font-semibold tracking-tight">系统设置</h1>
+        <p class="mt-1 text-sm text-muted-foreground">维护全局和项目级模型 Provider，任务执行时项目级配置优先</p>
       </div>
       <div class="flex flex-wrap gap-2">
-        <Button variant="outline" @click="addProvider('global')">新增全局配置</Button>
-        <Button :disabled="!projects.length" @click="addProvider('project')">新增项目配置</Button>
+        <Button variant="outline" @click="addProvider('global')">
+          <Globe class="size-4" /> 新增全局配置
+        </Button>
+        <Button :disabled="!projects.length" @click="addProvider('project')">
+          <FolderKanban class="size-4" /> 新增项目配置
+        </Button>
       </div>
     </div>
 
-    <div v-if="msg" class="rounded-md border px-3 py-2 text-sm" :class="msg.includes('失败') ? 'border-destructive/30 text-destructive' : 'text-muted-foreground'">
+    <div
+      v-if="msg"
+      class="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+    >
       {{ msg }}
     </div>
 
-    <div v-if="pageLoading" class="rounded-lg border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
-      正在加载模型配置...
+    <div v-if="pageLoading" class="rounded-xl border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+      正在加载模型配置…
     </div>
-    <div v-else-if="!providers.length" class="rounded-lg border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
-      暂无模型配置
+    <div v-else-if="!providers.length" class="rounded-xl border border-dashed py-16 text-center text-sm text-muted-foreground">
+      暂无模型配置，点击上方按钮新增
     </div>
 
-    <Card v-for="provider in providers" :key="provider.id">
+    <Card v-for="provider in providers" :key="provider.id" class="shadow-none">
       <CardHeader class="pb-3">
         <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <CardTitle class="text-base">{{ provider.name || '未命名 Provider' }}</CardTitle>
+            <CardTitle class="text-base font-semibold">{{ provider.name || '未命名 Provider' }}</CardTitle>
             <CardDescription>{{ provider.scope_type === 'project' ? '项目级配置' : '全局配置' }}</CardDescription>
           </div>
           <div class="flex flex-wrap items-center gap-2">
@@ -240,49 +259,50 @@ async function verifyModel(provider: ProviderUI, model: string, format: ApiForma
       </CardHeader>
 
       <CardContent class="grid gap-4 lg:grid-cols-2">
-        <div class="space-y-1">
+        <div class="space-y-1.5">
           <Label>名称</Label>
           <Input v-model="provider.name" placeholder="如：OpenAI 官方、Anthropic、OpenRouter" />
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1.5">
           <Label>作用域</Label>
-          <select v-model="provider.scope_type" class="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+          <select v-model="provider.scope_type" class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring">
             <option value="global">全局</option>
             <option value="project">项目级</option>
           </select>
         </div>
-        <div v-if="provider.scope_type === 'project'" class="space-y-1">
+        <div v-if="provider.scope_type === 'project'" class="space-y-1.5">
           <Label>项目</Label>
-          <select v-model="provider.project_id" class="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+          <select v-model="provider.project_id" class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring">
             <option value="">选择项目</option>
             <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.name }}</option>
           </select>
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1.5">
           <Label>API Base URL</Label>
           <Input v-model="provider.base_url" placeholder="https://api.openai.com/v1" />
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1.5">
           <div class="flex items-center justify-between">
             <Label>API Key</Label>
             <Button size="sm" variant="outline" class="h-6 px-2 text-[11px]" :disabled="provider.fetching || !provider.base_url" @click="fetchModels(provider)">
-              {{ provider.fetching ? '拉取中...' : '拉取模型列表' }}
+              {{ provider.fetching ? '拉取中…' : '拉取模型列表' }}
             </Button>
           </div>
           <Input v-model="provider.api_key" :type="provider.api_key?.includes('*') ? 'text' : 'password'" placeholder="输入新 Key 可覆盖，留空保持不变" />
         </div>
+
         <div class="space-y-2 lg:col-span-2">
           <Label>API 格式</Label>
           <div class="grid gap-2 md:grid-cols-2">
             <label
               v-for="option in formatOptions"
               :key="option.value"
-              class="flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 text-sm"
-              :class="normalizeFormats(provider).includes(option.value) ? 'border-primary bg-primary/5' : 'border-border bg-background'"
+              class="flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2 text-sm transition-colors"
+              :class="normalizeFormats(provider).includes(option.value) ? 'border-primary bg-primary/5' : 'border-border'"
             >
               <input
                 type="checkbox"
-                class="mt-0.5 accent-primary"
+                class="mt-0.5 size-4 accent-[hsl(var(--primary))]"
                 :checked="normalizeFormats(provider).includes(option.value)"
                 @change="toggleFormat(provider, option.value, eventChecked($event))"
               />
@@ -293,14 +313,15 @@ async function verifyModel(provider: ProviderUI, model: string, format: ApiForma
             </label>
           </div>
         </div>
+
         <div class="space-y-2 lg:col-span-2">
           <Label>模型</Label>
           <div v-if="provider.availableModels.length" class="flex flex-wrap gap-2">
             <label
               v-for="model in provider.availableModels"
               :key="model"
-              class="flex items-center gap-1 rounded border px-2 py-1 text-xs"
-              :class="provider.models.includes(model) ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background'"
+              class="flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 font-mono-data text-xs transition-colors"
+              :class="provider.models.includes(model) ? 'border-primary bg-primary/10 text-primary' : 'border-border'"
             >
               <input type="checkbox" :checked="provider.models.includes(model)" class="sr-only" @change="toggleModel(provider, model)" />
               <span>{{ provider.models.includes(model) ? '✓' : '+' }}</span>
@@ -313,13 +334,13 @@ async function verifyModel(provider: ProviderUI, model: string, format: ApiForma
                   class="text-[10px] underline"
                   :disabled="provider.verifying === `${model}:${format}`"
                   @click.stop="verifyModel(provider, model, format)"
-                >{{ provider.verifying === `${model}:${format}` ? '...' : `验证${format === 'responses' ? 'R' : 'M'}` }}</button>
+                >{{ provider.verifying === `${model}:${format}` ? '…' : `验证${format === 'responses' ? 'R' : 'M'}` }}</button>
               </span>
             </label>
           </div>
           <div v-else class="text-xs text-muted-foreground">输入 URL 和 Key 后点击「拉取模型列表」，或手动添加模型。</div>
           <div class="flex gap-2">
-            <Input v-model="provider.manualModel" class="h-8 text-xs" placeholder="手动输入模型名称，如 gpt-5-codex" @keydown.enter="addManualModel(provider)" />
+            <Input v-model="provider.manualModel" class="h-8 font-mono-data text-xs" placeholder="手动输入模型名称，如 gpt-5-codex" @keydown.enter="addManualModel(provider)" />
             <Button size="sm" variant="outline" class="h-8 px-3 text-xs" @click="addManualModel(provider)">添加</Button>
           </div>
         </div>
@@ -327,9 +348,16 @@ async function verifyModel(provider: ProviderUI, model: string, format: ApiForma
 
       <CardFooter class="flex flex-wrap items-center gap-3">
         <Button :disabled="provider.saving || (provider.scope_type === 'project' && !provider.project_id)" @click="saveProvider(provider)">
-          {{ provider.saving ? '保存中...' : '保存模型配置' }}
+          {{ provider.saving ? '保存中…' : '保存模型配置' }}
         </Button>
-        <span v-if="provider.msg" class="text-sm" :class="provider.msg.includes('已保存') || provider.msg.includes('获取到') || provider.msg.includes('连通正常') ? 'text-green-600' : 'text-destructive'">{{ provider.msg }}</span>
+        <span
+          v-if="provider.msg"
+          class="flex items-center gap-1 text-sm"
+          :class="provider.msgOk ? 'text-success' : 'text-destructive'"
+        >
+          <component :is="provider.msgOk ? Check : CircleAlert" class="size-3.5" />
+          {{ provider.msg }}
+        </span>
       </CardFooter>
     </Card>
   </div>

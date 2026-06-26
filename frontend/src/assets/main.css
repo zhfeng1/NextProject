@@ -2,68 +2,121 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * NextProject design system — "neutral professional"
+ *
+ * One identity, applied as tokens. Every screen derives from here.
+ * The vocabulary is intentionally small and semantic:
+ *   primary (blue)      — actions, links, active/selection
+ *   success (emerald)   — running, ok, complete
+ *   warning (amber)     — queued, building, in-flight, attention
+ *   danger  (red)       — failed, error, destructive
+ *   muted/info (slate)  — neutral, stopped, canceled, idle
+ *
+ * Typography: Inter (display + body), JetBrains Mono (all data: ids,
+ * SHAs, counts, timestamps, logs, rates). Mono-for-data is the signature.
+ */
+
 @layer base {
   :root {
     --background: 0 0% 100%;
-    --foreground: 0 0% 9%;
+    --foreground: 222 22% 11%;
+
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 9%;
+    --card-foreground: 222 22% 11%;
+
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
+    --popover-foreground: 222 22% 11%;
+
+    --primary: 221 83% 53%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 20% 96%;
+    --secondary-foreground: 222 22% 11%;
+
+    --muted: 210 20% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 214 95% 93%;
+    --accent-foreground: 221 83% 40%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 160 84% 39%;
+    --success-foreground: 160 40% 98%;
+
+    --warning: 32 95% 44%;
+    --warning-foreground: 38 92% 97%;
+
+    --border: 214 25% 90%;
+    --input: 214 25% 90%;
+    --ring: 221 83% 53%;
     --radius: 0.5rem;
 
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 22% 11%;
+    --sidebar-primary: 221 83% 53%;
+    --sidebar-primary-foreground: 210 40% 98%;
+    --sidebar-accent: 214 95% 93%;
+    --sidebar-accent-foreground: 221 83% 40%;
+    --sidebar-border: 214 25% 90%;
+    --sidebar-ring: 221 83% 53%;
+
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+      'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', Helvetica, Arial,
+      sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Consolas,
+      'Liberation Mono', Menlo, monospace;
+
+    color-scheme: light;
   }
 
   .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
-    --ring: 0 0% 83.1%;
+    --background: 222 22% 8%;
+    --foreground: 210 20% 96%;
 
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --card: 222 20% 10%;
+    --card-foreground: 210 20% 96%;
+
+    --popover: 222 20% 10%;
+    --popover-foreground: 210 20% 96%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 11%;
+
+    --secondary: 222 16% 16%;
+    --secondary-foreground: 210 20% 96%;
+
+    --muted: 222 16% 16%;
+    --muted-foreground: 215 16% 65%;
+
+    --accent: 222 16% 18%;
+    --accent-foreground: 210 20% 90%;
+
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 160 70% 42%;
+    --success-foreground: 160 40% 98%;
+
+    --warning: 32 95% 55%;
+    --warning-foreground: 38 92% 11%;
+
+    --border: 222 14% 20%;
+    --input: 222 14% 22%;
+    --ring: 217 91% 60%;
+
+    --sidebar-background: 222 24% 6%;
+    --sidebar-foreground: 210 20% 96%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 222 47% 11%;
+    --sidebar-accent: 222 16% 14%;
+    --sidebar-accent-foreground: 210 20% 90%;
+    --sidebar-border: 222 14% 18%;
+    --sidebar-ring: 217 91% 60%;
+
+    color-scheme: dark;
   }
 }
 
@@ -71,39 +124,154 @@
   * {
     @apply border-border;
   }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Noto Sans SC", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv11', 'ss01';
+    font-variation-settings: 'opsz' 32;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.2);
+  }
+
+  h1, h2, h3, h4 {
+    font-feature-settings: 'cv11', 'ss01';
+    letter-spacing: -0.011em;
   }
 }
 
-/* Scrollbar — auto-hide, show on hover */
+/* ---------------------------------------------------------------------------
+ * Data typographic utilities — the signature.
+ * Every metric, id, sha, timestamp, count is set in tabular mono so columns
+ * align and numbers don't reflow. Apply .tabular to proportional numbers.
+ * ------------------------------------------------------------------------- */
+@layer utilities {
+  .font-mono-data {
+    font-family: var(--font-mono);
+    font-feature-settings: 'zero', 'ss02', 'cv01';
+    letter-spacing: -0.01em;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  /* Big stat numeral: tabular, mono, optically tuned for display sizes. */
+  .stat-num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'zero', 'ss02';
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Status dots — one consistent language across the whole app.
+ * status-dot tone + optional pulse. Tone is set via data-tone attribute.
+ * ------------------------------------------------------------------------- */
+@layer components {
+  .status-dot {
+    @apply relative inline-flex shrink-0 rounded-full;
+    width: 0.5rem;
+    height: 0.5rem;
+  }
+
+  .status-dot[data-tone='success'] { background-color: hsl(var(--success)); }
+  .status-dot[data-tone='warning'] { background-color: hsl(var(--warning)); }
+  .status-dot[data-tone='danger']  { background-color: hsl(var(--destructive)); }
+  .status-dot[data-tone='primary'] { background-color: hsl(var(--primary)); }
+  .status-dot[data-tone='muted'] {
+    background-color: hsl(var(--muted-foreground) / 0.5);
+  }
+
+  .status-dot[data-pulse='true']::after {
+    content: '';
+    @apply absolute inset-0 rounded-full;
+    background-color: inherit;
+    opacity: 0.6;
+    animation: status-dot-pulse 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes status-dot-pulse {
+    0% { transform: scale(1); opacity: 0.6; }
+    70% { transform: scale(2.4); opacity: 0; }
+    100% { transform: scale(2.4); opacity: 0; }
+  }
+}
+
+/* Surface card for dense data layouts — flatter than the default card,
+ * single hairline, used for toolbars and inline panels. */
+@layer components {
+  .surface {
+    @apply rounded-lg border border-border bg-card;
+  }
+}
+
+/* Console/log terminal surface — intentionally dark in both themes so
+ * log output reads like a real terminal regardless of app theme. */
+@layer utilities {
+  .terminal {
+    background-color: #0b0e14;
+    color: #cdd6e4;
+    font-family: var(--font-mono);
+    font-feature-settings: 'zero', 'ss02';
+  }
+  .terminal-time { color: #5b6678; }
+  .terminal-info { color: #5fb3ff; }
+  .terminal-warn { color: #e6b450; }
+  .terminal-error { color: #ff6b6b; }
+}
+
+/* ---------------------------------------------------------------------------
+ * Reduced motion — disable dot pulse and any transitions.
+ * ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Visible keyboard focus on all interactive surfaces */
+@layer base {
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Scrollbars — subtle, hover-revealed, theme-aware.
+ * ------------------------------------------------------------------------- */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 3px;
-  transition: background 0.2s;
+  background: hsl(var(--muted-foreground) / 0.25);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
-*:hover::-webkit-scrollbar-thumb {
-  background: #d4d4d4;
-}
-*:hover::-webkit-scrollbar-thumb:hover {
-  background: #a3a3a3;
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.45);
+  background-clip: padding-box;
 }
 * {
   scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-*:hover {
-  scrollbar-color: #d4d4d4 transparent;
-}
-@media (hover: none) {
-  ::-webkit-scrollbar-thumb { background: #d4d4d4; }
-  * { scrollbar-color: #d4d4d4 transparent; }
+  scrollbar-color: hsl(var(--muted-foreground) / 0.25) transparent;
 }

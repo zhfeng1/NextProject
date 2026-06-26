@@ -13,7 +13,7 @@ import { projectsAPI } from '@/api/projects'
 import { mcpAPI } from '@/api/mcp'
 import { skillsAPI } from '@/api/skills'
 import type { MCPService, Project, Skill } from '@/types/models'
-import { Plus, FolderKanban, Trash2, Send } from 'lucide-vue-next'
+import { Plus, FolderKanban, Trash2, Send, Search, FolderGit2 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 
 const router = useRouter()
@@ -157,49 +157,69 @@ const submitProjectTask = async () => {
     submittingTask.value = false
   }
 }
+
+function repoCount(p: Project) {
+  return p.repo_count ?? (p.repos?.length ?? 0)
+}
 </script>
 
 <template>
   <div class="space-y-6">
-    <div class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold">项目管理</h1>
-      <div class="flex items-center gap-4">
-        <Input v-model="filter.search" placeholder="搜索项目..." class="w-64" />
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h1 class="text-2xl font-semibold tracking-tight">项目管理</h1>
+        <p class="mt-1 text-sm text-muted-foreground">组织仓库并跨仓下发编码任务</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <div class="relative">
+          <Search class="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input v-model="filter.search" placeholder="搜索项目…" class="w-56 pl-8" />
+        </div>
         <Button @click="showCreateDialog = true">
-          <Plus class="w-4 h-4 mr-2" />
+          <Plus class="size-4" />
           新建项目
         </Button>
       </div>
     </div>
 
-    <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+    <div v-if="filteredProjects.length" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       <Card
         v-for="project in filteredProjects"
         :key="project.id"
-        class="flex flex-col cursor-pointer hover:shadow-md transition-shadow"
+        class="group flex cursor-pointer flex-col shadow-none transition-all hover:border-primary/40 hover:shadow-sm"
         @click="router.push(`/projects/${project.id}`)"
       >
         <CardHeader>
-          <CardTitle class="text-lg font-bold flex items-center gap-2">
-            <FolderKanban class="w-5 h-5 text-muted-foreground" />
-            {{ project.name }}
+          <CardTitle class="flex items-center gap-2 text-base font-semibold">
+            <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <FolderKanban class="size-4" />
+            </div>
+            <span class="truncate">{{ project.name }}</span>
           </CardTitle>
         </CardHeader>
-        <CardContent class="flex-1 text-sm text-muted-foreground space-y-1">
-          <p v-if="project.description">{{ project.description }}</p>
-          <p>仓库数: {{ project.repo_count }}</p>
-          <p>创建于: {{ formatDate(project.created_at) }}</p>
+        <CardContent class="flex-1 space-y-2 text-sm text-muted-foreground">
+          <p v-if="project.description" class="line-clamp-2 leading-relaxed">{{ project.description }}</p>
+          <p v-else class="italic">暂无描述</p>
+          <div class="flex items-center gap-3 pt-1 font-mono-data text-xs">
+            <span class="flex items-center gap-1"><FolderGit2 class="size-3" />{{ repoCount(project) }} 仓库</span>
+            <span>{{ formatDate(project.created_at) }}</span>
+          </div>
         </CardContent>
-        <CardFooter class="justify-end">
-          <Button variant="outline" size="sm" class="mr-2" @click.stop="openTaskDialog(project)">
-            <Send class="w-4 h-4 mr-2" />
+        <CardFooter class="justify-end gap-1 border-t pt-3">
+          <Button variant="ghost" size="sm" class="gap-1.5" @click.stop="openTaskDialog(project)">
+            <Send class="size-3.5" />
             提交任务
           </Button>
-          <Button variant="ghost" size="sm" @click.stop="handleDelete(project.id)">
-            <Trash2 class="w-4 h-4" />
+          <Button variant="ghost" size="icon-sm" class="text-muted-foreground hover:text-destructive" @click.stop="handleDelete(project.id)">
+            <Trash2 class="size-3.5" />
           </Button>
         </CardFooter>
       </Card>
+    </div>
+
+    <div v-else class="rounded-xl border border-dashed py-20 text-center">
+      <FolderKanban class="mx-auto size-8 text-muted-foreground/40" />
+      <p class="mt-3 text-sm text-muted-foreground">还没有项目，点击「新建项目」开始</p>
     </div>
 
     <Dialog v-model:open="showCreateDialog">
@@ -208,11 +228,11 @@ const submitProjectTask = async () => {
           <DialogTitle>新建项目</DialogTitle>
         </DialogHeader>
         <div class="space-y-4">
-          <div>
+          <div class="space-y-2">
             <Label>项目名称</Label>
             <Input v-model="createForm.name" placeholder="输入项目名称" />
           </div>
-          <div>
+          <div class="space-y-2">
             <Label>项目描述</Label>
             <Input v-model="createForm.description" placeholder="可选描述" />
           </div>
@@ -220,7 +240,7 @@ const submitProjectTask = async () => {
         <DialogFooter>
           <Button variant="outline" @click="showCreateDialog = false">取消</Button>
           <Button @click="handleCreate" :disabled="creating || !createForm.name.trim()">
-            {{ creating ? '创建中...' : '创建' }}
+            {{ creating ? '创建中…' : '创建' }}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -233,7 +253,7 @@ const submitProjectTask = async () => {
         </DialogHeader>
         <div class="grid gap-4 py-2">
           <div class="flex items-center gap-2 text-sm text-muted-foreground">
-            <FolderKanban class="h-4 w-4" />
+            <FolderKanban class="size-4" />
             <span>{{ taskProject?.name }}</span>
             <Badge variant="secondary">{{ taskForm.repo_ids.length }} 个仓库</Badge>
           </div>
@@ -244,7 +264,7 @@ const submitProjectTask = async () => {
             </div>
             <div class="space-y-1.5">
               <Label>Provider</Label>
-              <select v-model="taskForm.provider" class="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+              <select v-model="taskForm.provider" class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring">
                 <option value="codex">Codex</option>
                 <option value="claude_code">Claude Code</option>
                 <option value="gemini_cli">Gemini CLI</option>
@@ -255,17 +275,22 @@ const submitProjectTask = async () => {
             <Label>任务需求</Label>
             <textarea
               v-model="taskForm.prompt"
-              class="min-h-[140px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+              class="min-h-[140px] w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
               placeholder="描述这次需要跨仓完成的修改"
             />
           </div>
           <div class="space-y-2">
             <Label>参与仓库</Label>
             <div class="grid gap-2 md:grid-cols-2">
-              <label v-for="repo in taskProject?.repos || []" :key="repo.site_id" class="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+              <label
+                v-for="repo in taskProject?.repos || []"
+                :key="repo.site_id"
+                class="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors"
+                :class="taskForm.repo_ids.includes(repo.site_id) ? 'border-primary bg-primary/5' : 'border-border'"
+              >
                 <input
                   type="checkbox"
-                  class="h-4 w-4 accent-primary"
+                  class="size-4 accent-[hsl(var(--primary))]"
                   :checked="taskForm.repo_ids.includes(repo.site_id)"
                   @change="toggleInList(taskForm.repo_ids, repo.site_id)"
                 />
@@ -277,10 +302,15 @@ const submitProjectTask = async () => {
             <div class="space-y-2">
               <Label>六阶段要求</Label>
               <div class="flex flex-wrap gap-2">
-                <label v-for="stage in WORKFLOW_STAGES" :key="stage.key" class="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm">
+                <label
+                  v-for="stage in WORKFLOW_STAGES"
+                  :key="stage.key"
+                  class="inline-flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition-colors"
+                  :class="taskForm.workflow_stages.includes(stage.key) ? 'border-primary bg-primary/5' : 'border-border'"
+                >
                   <input
                     type="checkbox"
-                    class="h-4 w-4 accent-primary"
+                    class="size-4 accent-[hsl(var(--primary))]"
                     :checked="taskForm.workflow_stages.includes(stage.key)"
                     @change="toggleInList(taskForm.workflow_stages, stage.key)"
                   />
@@ -288,9 +318,9 @@ const submitProjectTask = async () => {
                 </label>
               </div>
             </div>
-            <div class="space-y-2">
+            <div class="space-y-1.5">
               <Label>优先级</Label>
-              <select v-model="taskForm.priority" class="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+              <select v-model="taskForm.priority" class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring">
                 <option value="urgent">紧急</option>
                 <option value="high">高</option>
                 <option value="medium">中</option>
@@ -303,22 +333,22 @@ const submitProjectTask = async () => {
               <Label>MCP</Label>
               <div class="max-h-32 space-y-1 overflow-y-auto rounded-md border p-2">
                 <label v-for="service in mcpServices" :key="`${service.service_id}-${service.scope_type}-${service.site_id}`" class="flex items-center gap-2 text-sm">
-                  <input type="checkbox" class="h-4 w-4 accent-primary" :checked="taskForm.enabled_mcp_services.includes(service.service_id)" @change="toggleInList(taskForm.enabled_mcp_services, service.service_id)" />
+                  <input type="checkbox" class="size-4 accent-[hsl(var(--primary))]" :checked="taskForm.enabled_mcp_services.includes(service.service_id)" @change="toggleInList(taskForm.enabled_mcp_services, service.service_id)" />
                   <span>{{ service.name }}</span>
                   <Badge variant="outline">{{ service.scope_type }}</Badge>
                 </label>
-                <div v-if="!mcpServices.length" class="text-xs text-muted-foreground">暂无已启用 MCP</div>
+                <div v-if="!mcpServices.length" class="py-2 text-center text-xs text-muted-foreground">暂无已启用 MCP</div>
               </div>
             </div>
             <div class="space-y-2">
               <Label>Skill</Label>
               <div class="max-h-32 space-y-1 overflow-y-auto rounded-md border p-2">
                 <label v-for="skill in skills" :key="skill.id" class="flex items-center gap-2 text-sm">
-                  <input type="checkbox" class="h-4 w-4 accent-primary" :checked="taskForm.enabled_skill_ids.includes(skill.id)" @change="toggleInList(taskForm.enabled_skill_ids, skill.id)" />
+                  <input type="checkbox" class="size-4 accent-[hsl(var(--primary))]" :checked="taskForm.enabled_skill_ids.includes(skill.id)" @change="toggleInList(taskForm.enabled_skill_ids, skill.id)" />
                   <span>{{ skill.name }}</span>
                   <Badge variant="outline">{{ skill.scope_type }}</Badge>
                 </label>
-                <div v-if="!skills.length" class="text-xs text-muted-foreground">暂无已启用 Skill</div>
+                <div v-if="!skills.length" class="py-2 text-center text-xs text-muted-foreground">暂无已启用 Skill</div>
               </div>
             </div>
           </div>
@@ -326,7 +356,7 @@ const submitProjectTask = async () => {
         <DialogFooter>
           <Button variant="outline" @click="showTaskDialog = false">取消</Button>
           <Button :disabled="submittingTask || !taskForm.prompt.trim() || !taskForm.repo_ids.length" @click="submitProjectTask">
-            {{ submittingTask ? '提交中...' : '提交任务' }}
+            {{ submittingTask ? '提交中…' : '提交任务' }}
           </Button>
         </DialogFooter>
       </DialogContent>

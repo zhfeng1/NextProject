@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { skillsAPI } from '@/api/skills'
 import { projectsAPI } from '@/api/projects'
 import type { Project, Skill } from '@/types/models'
+import { Plus, RefreshCw, Pencil, Download, Trash2 } from 'lucide-vue-next'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -17,6 +18,7 @@ const importing = ref(false)
 const skills = ref<Skill[]>([])
 const projects = ref<Project[]>([])
 const message = ref('')
+const messageTone = ref<'info' | 'success' | 'error'>('info')
 const filters = ref({ scope_type: '', project_id: '', site_id: '' })
 
 const editorOpen = ref(false)
@@ -43,6 +45,11 @@ const repos = computed(() => {
 })
 
 const editingSkill = computed(() => skills.value.find(skill => skill.id === editingSkillId.value) || null)
+
+function flash(text: string, tone: 'info' | 'success' | 'error') {
+  message.value = text
+  messageTone.value = tone
+}
 
 function resetForm() {
   editingSkillId.value = ''
@@ -115,15 +122,15 @@ async function saveSkill() {
     if (editingSkillId.value) {
       const res = await skillsAPI.update(editingSkillId.value, payload)
       skills.value = skills.value.map(item => item.id === editingSkillId.value ? res.skill : item)
-      message.value = 'Skill 已更新'
+      flash('Skill 已更新', 'success')
     } else {
       const res = await skillsAPI.create(payload)
       skills.value.unshift(res.skill)
-      message.value = 'Skill 已创建'
+      flash('Skill 已创建', 'success')
     }
     editorOpen.value = false
   } catch (error: any) {
-    message.value = error?.response?.data?.detail || '保存失败'
+    flash(error?.response?.data?.detail || '保存失败', 'error')
   } finally {
     saving.value = false
   }
@@ -135,16 +142,16 @@ async function removeSkill(skill: Skill) {
     await skillsAPI.remove(skill.id)
     skills.value = skills.value.filter(item => item.id !== skill.id)
   } catch (error: any) {
-    message.value = error?.response?.data?.detail || '删除失败'
+    flash(error?.response?.data?.detail || '删除失败', 'error')
   }
 }
 
 async function copySkill(skill: Skill) {
   try {
     await navigator.clipboard.writeText(skill.content)
-    message.value = `已复制 ${skill.name} Markdown 内容`
+    flash(`已复制 ${skill.name} Markdown 内容`, 'success')
   } catch {
-    message.value = '复制失败，请手动选择内容'
+    flash('复制失败，请手动选择内容', 'error')
   }
 }
 
@@ -165,9 +172,9 @@ async function importSkill() {
     importOpen.value = false
     importForm.markdown = ''
     importForm.url = ''
-    message.value = `已导入 Skill`
+    flash('已导入 Skill', 'success')
   } catch (error: any) {
-    message.value = error?.response?.data?.detail || '导入失败'
+    flash(error?.response?.data?.detail || '导入失败', 'error')
   } finally {
     importing.value = false
   }
@@ -180,64 +187,94 @@ onMounted(loadData)
   <div class="space-y-6">
     <div class="flex items-start justify-between gap-4">
       <div>
-        <h1 class="text-3xl font-bold tracking-tight">Skill 中心</h1>
-        <p class="mt-2 text-sm text-muted-foreground">按全局、项目、仓库维护任务可附带的 Skill。</p>
+        <h1 class="text-2xl font-semibold tracking-tight">Skill 中心</h1>
+        <p class="mt-1 text-sm text-muted-foreground">按全局、项目、仓库维护任务可附带的 Skill</p>
       </div>
       <div class="flex gap-2">
+        <Button variant="outline" :disabled="loading" @click="loadData">
+          <RefreshCw class="size-4" :class="loading ? 'animate-spin' : ''" />
+          刷新
+        </Button>
         <Button variant="outline" @click="importOpen = true">导入 Skill</Button>
-        <Button @click="openCreate">新建 Skill</Button>
+        <Button @click="openCreate">
+          <Plus class="size-4" />
+          新建
+        </Button>
       </div>
     </div>
 
-    <div class="grid gap-3 rounded-lg border bg-background p-3 md:grid-cols-4">
-      <select v-model="filters.scope_type" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm" @change="loadData">
+    <!-- Filters -->
+    <div class="grid gap-3 rounded-xl border bg-card p-3 md:grid-cols-4">
+      <select v-model="filters.scope_type" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring" @change="loadData">
         <option value="">全部作用域</option>
         <option value="global">全局</option>
         <option value="project">项目级</option>
         <option value="repo">仓库级</option>
       </select>
-      <select v-model="filters.project_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm" @change="filters.site_id = ''; loadData()">
+      <select v-model="filters.project_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring" @change="filters.site_id = ''; loadData()">
         <option value="">全部项目</option>
         <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.name }}</option>
       </select>
-      <select v-model="filters.site_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm" @change="loadData">
+      <select v-model="filters.site_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring" @change="loadData">
         <option value="">全部仓库</option>
         <option v-for="repo in repos" :key="repo.site_id" :value="repo.site_id">{{ repo.name }}</option>
       </select>
       <Button variant="outline" @click="filters = { scope_type: '', project_id: '', site_id: '' }; loadData()">清空筛选</Button>
     </div>
 
-    <div v-if="message" class="rounded-lg border bg-background px-4 py-3 text-sm">{{ message }}</div>
-    <div v-if="loading" class="rounded-lg border bg-background px-4 py-6 text-sm text-muted-foreground">正在加载 Skill 列表...</div>
+    <div
+      v-if="message"
+      class="rounded-lg border px-4 py-3 text-sm"
+      :class="{
+        'border-success/30 bg-success/5 text-success': messageTone === 'success',
+        'border-destructive/30 bg-destructive/5 text-destructive': messageTone === 'error',
+        'border-border bg-muted/40 text-muted-foreground': messageTone === 'info',
+      }"
+    >
+      {{ message }}
+    </div>
+    <div v-if="loading" class="rounded-lg border bg-card px-4 py-6 text-sm text-muted-foreground">正在加载 Skill 列表…</div>
 
     <div v-else class="grid gap-4 lg:grid-cols-2">
-      <Card v-for="skill in skills" :key="skill.id" class="border-border/70">
+      <Card v-for="skill in skills" :key="skill.id" class="shadow-none">
         <CardHeader class="space-y-3">
           <div class="flex items-start justify-between gap-3">
             <div>
-              <CardTitle class="text-lg">{{ skill.name }}</CardTitle>
+              <CardTitle class="flex items-center gap-2 text-base font-semibold">
+                {{ skill.name }}
+                <span class="flex items-center gap-1 text-xs font-medium" :class="skill.enabled ? 'text-success' : 'text-muted-foreground'">
+                  <span class="status-dot" :data-tone="skill.enabled ? 'success' : 'muted'" />
+                  {{ skill.enabled ? '启用' : '停用' }}
+                </span>
+              </CardTitle>
               <CardDescription class="mt-1">{{ skill.description || '暂无描述' }}</CardDescription>
             </div>
-            <Badge :variant="skill.enabled ? 'default' : 'secondary'">{{ skill.enabled ? '启用中' : '已停用' }}</Badge>
           </div>
-          <div class="flex flex-wrap gap-2 text-xs">
+          <div class="flex flex-wrap gap-1.5">
             <Badge variant="outline">{{ skill.scope_type }}</Badge>
             <Badge variant="outline">{{ skill.source_type }}</Badge>
             <Badge v-for="trigger in skill.triggers" :key="trigger" variant="secondary">{{ trigger }}</Badge>
           </div>
         </CardHeader>
         <CardContent class="space-y-4">
-          <pre class="max-h-44 overflow-y-auto rounded-md bg-muted/30 p-3 text-xs leading-relaxed whitespace-pre-wrap">{{ skill.content }}</pre>
-          <div v-if="skill.source_url" class="text-xs text-muted-foreground break-all">来源: {{ skill.source_url }}</div>
+          <pre class="max-h-44 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/50 p-3 font-mono-data text-xs leading-relaxed">{{ skill.content }}</pre>
+          <div v-if="skill.source_url" class="break-all font-mono-data text-xs text-muted-foreground">来源：{{ skill.source_url }}</div>
           <div class="flex gap-2">
-            <Button class="flex-1" variant="outline" @click="openEdit(skill)">编辑</Button>
-            <Button class="flex-1" variant="outline" @click="copySkill(skill)">导出 Markdown</Button>
-            <Button variant="destructive" @click="removeSkill(skill)">删除</Button>
+            <Button class="flex-1" variant="outline" size="sm" @click="openEdit(skill)">
+              <Pencil class="size-3.5" /> 编辑
+            </Button>
+            <Button class="flex-1" variant="outline" size="sm" @click="copySkill(skill)">
+              <Download class="size-3.5" /> 导出
+            </Button>
+            <Button variant="destructive" size="sm" @click="removeSkill(skill)">
+              <Trash2 class="size-3.5" />
+            </Button>
           </div>
         </CardContent>
       </Card>
     </div>
 
+    <!-- Editor dialog -->
     <Dialog :open="editorOpen" @update:open="editorOpen = $event">
       <DialogContent class="sm:max-w-[760px]">
         <DialogHeader>
@@ -255,16 +292,16 @@ onMounted(loadData)
             </div>
           </div>
           <div class="grid gap-3 md:grid-cols-3">
-            <select v-model="form.scope_type" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm">
+            <select v-model="form.scope_type" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring">
               <option value="global">全局</option>
               <option value="project">项目级</option>
               <option value="repo">仓库级</option>
             </select>
-            <select v-model="form.project_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm" :disabled="form.scope_type !== 'project'">
+            <select v-model="form.project_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50" :disabled="form.scope_type !== 'project'">
               <option value="">选择项目</option>
               <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.name }}</option>
             </select>
-            <select v-model="form.site_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm" :disabled="form.scope_type !== 'repo'">
+            <select v-model="form.site_id" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50" :disabled="form.scope_type !== 'repo'">
               <option value="">选择仓库</option>
               <option v-for="repo in projects.flatMap(item => item.repos || [])" :key="repo.site_id" :value="repo.site_id">{{ repo.name }}</option>
             </select>
@@ -277,22 +314,23 @@ onMounted(loadData)
             <Label>内容</Label>
             <textarea
               v-model="form.content"
-              class="min-h-[260px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+              class="min-h-[260px] w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 font-mono-data text-sm outline-none focus:ring-2 focus:ring-ring"
               placeholder="# Skill 标题"
             />
           </div>
           <label class="inline-flex items-center gap-2 text-sm">
-            <input v-model="form.enabled" type="checkbox" class="h-4 w-4 accent-primary" />
+            <input v-model="form.enabled" type="checkbox" class="size-4 accent-[hsl(var(--primary))]" />
             保存后立即启用
           </label>
         </div>
         <DialogFooter>
           <Button variant="outline" @click="editorOpen = false">取消</Button>
-          <Button :disabled="saving || !form.content.trim()" @click="saveSkill">{{ saving ? '保存中...' : '保存' }}</Button>
+          <Button :disabled="saving || !form.content.trim()" @click="saveSkill">{{ saving ? '保存中…' : '保存' }}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
 
+    <!-- Import dialog -->
     <Dialog :open="importOpen" @update:open="importOpen = $event">
       <DialogContent class="sm:max-w-[760px]">
         <DialogHeader>
@@ -300,8 +338,8 @@ onMounted(loadData)
         </DialogHeader>
         <div class="space-y-4 py-2">
           <div class="flex gap-2">
-            <Button :variant="importMode === 'skills_sh' ? 'default' : 'outline'" @click="importMode = 'skills_sh'">从 skills.sh 导入</Button>
-            <Button :variant="importMode === 'markdown' ? 'default' : 'outline'" @click="importMode = 'markdown'">从 Markdown 导入</Button>
+            <Button :variant="importMode === 'skills_sh' ? 'default' : 'outline'" size="sm" @click="importMode = 'skills_sh'">从 skills.sh 导入</Button>
+            <Button :variant="importMode === 'markdown' ? 'default' : 'outline'" size="sm" @click="importMode = 'markdown'">从 Markdown 导入</Button>
           </div>
           <div v-if="importMode === 'skills_sh'" class="space-y-2">
             <Label>skills.sh 详情页 URL</Label>
@@ -309,13 +347,13 @@ onMounted(loadData)
           </div>
           <div v-else class="space-y-2">
             <Label>Markdown 内容</Label>
-            <textarea v-model="importForm.markdown" class="min-h-[260px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring" placeholder="# Skill 标题" />
+            <textarea v-model="importForm.markdown" class="min-h-[260px] w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 font-mono-data text-sm outline-none focus:ring-2 focus:ring-ring" placeholder="# Skill 标题" />
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" @click="importOpen = false">取消</Button>
           <Button :disabled="importing || (importMode === 'skills_sh' ? !importForm.url.trim() : !importForm.markdown.trim())" @click="importSkill">
-            {{ importing ? '导入中...' : '导入' }}
+            {{ importing ? '导入中…' : '导入' }}
           </Button>
         </DialogFooter>
       </DialogContent>

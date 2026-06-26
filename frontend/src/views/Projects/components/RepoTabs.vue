@@ -13,25 +13,31 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="flex border-b overflow-x-auto">
-    <button
+  <div class="flex shrink-0 overflow-x-auto border-b bg-muted/20">
+    <div
       v-for="repo in repos"
       :key="repo.site_id"
-      class="px-4 py-2 text-sm whitespace-nowrap border-b-2 transition-colors"
+      class="flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-2 text-sm transition-colors"
       :class="activeRepoId === repo.site_id
-        ? 'border-primary text-primary font-medium'
+        ? 'border-primary font-medium text-foreground'
         : 'border-transparent text-muted-foreground hover:text-foreground'"
-      @click="emit('select', repo.site_id)"
     >
-      {{ repo.name }}
-      <span
+      <button
+        type="button"
+        class="min-w-0 truncate"
+        @click="emit('select', repo.site_id)"
+      >
+        {{ repo.name }}
+      </button>
+      <button
         v-if="repo.status === 'building'"
-        class="ml-1 text-xs text-yellow-500 underline-offset-2 hover:underline"
-        role="button"
-        tabindex="0"
-        @click.stop="emit('viewBuildLog', repo)"
-        @keyup.enter.stop="emit('viewBuildLog', repo)"
-      >克隆中... 查看</span>
-    </button>
+        type="button"
+        class="flex items-center gap-1 text-xs text-warning hover:underline"
+        @click="emit('viewBuildLog', repo)"
+      >
+        <span class="status-dot" data-tone="warning" data-pulse="true" />
+        克隆中
+      </button>
+    </div>
   </div>
 </template>

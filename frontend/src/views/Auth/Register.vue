@@ -3,10 +3,10 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { toast } from 'vue-sonner'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { CircleAlert } from 'lucide-vue-next'
 
 const email = ref('')
 const password = ref('')
@@ -50,7 +50,7 @@ const register = async () => {
     loading.value = true
     errorMsg.value = ''
     await authStore.register(email.value.trim(), password.value)
-    toast.success('注册成功，正在跳转登录页...')
+    toast.success('注册成功，正在跳转登录页…')
     router.push('/login')
   } catch (e: any) {
     const detail = e?.response?.data?.detail || ''
@@ -67,37 +67,102 @@ const register = async () => {
 </script>
 
 <template>
-  <div class="flex items-center justify-center min-h-screen bg-muted/20">
-    <Card class="w-[400px]">
-      <CardHeader>
-        <CardTitle class="text-2xl text-center">创建账号</CardTitle>
-        <CardDescription class="text-center">输入您的邮箱以创建新账号</CardDescription>
-      </CardHeader>
-      <CardContent class="grid gap-4">
-        <div v-if="errorMsg" class="rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
-          {{ errorMsg }}
+  <div class="grid min-h-screen lg:grid-cols-2">
+    <!-- Brand panel -->
+    <aside
+      class="relative hidden flex-col justify-between overflow-hidden border-r bg-zinc-950 p-12 text-zinc-100 lg:flex"
+    >
+      <div
+        class="pointer-events-none absolute inset-0 opacity-[0.07]"
+        style="background-image: radial-gradient(circle at 1px 1px, white 1px, transparent 0); background-size: 28px 28px;"
+      />
+      <div class="relative flex items-center gap-3">
+        <div class="flex size-9 items-center justify-center rounded-lg bg-primary font-mono-data text-base font-bold">
+          N
         </div>
-        <div class="grid gap-2">
-          <Label for="email">邮箱</Label>
-          <Input id="email" type="email" placeholder="m@example.com" v-model="email" @keyup.enter="register" />
+        <span class="text-lg font-semibold tracking-tight">NextProject</span>
+      </div>
+
+      <div class="relative max-w-md space-y-6">
+        <p class="text-3xl font-semibold leading-tight tracking-tight">
+          建一个账号，<br />开始驱动 AI 交付。
+        </p>
+        <p class="text-sm leading-relaxed text-zinc-400">
+          注册后即可创建项目、挂载仓库、下发编码任务，并实时查看日志与检查点。任务全程隔离在容器内执行。
+        </p>
+      </div>
+
+      <p class="relative font-mono-data text-xs text-zinc-600">
+        // 企业级隔离部署 · 杜绝误删本地文件
+      </p>
+    </aside>
+
+    <!-- Form panel -->
+    <div class="flex items-center justify-center bg-muted/30 p-6">
+      <div class="w-full max-w-sm">
+        <div class="mb-8 flex items-center gap-3 lg:hidden">
+          <div class="flex size-9 items-center justify-center rounded-lg bg-primary font-mono-data text-base font-bold text-primary-foreground">
+            N
+          </div>
+          <span class="text-lg font-semibold tracking-tight">NextProject</span>
         </div>
-        <div class="grid gap-2">
-          <Label for="password">密码</Label>
-          <Input id="password" type="password" placeholder="至少 6 位" v-model="password" />
+
+        <div class="space-y-2">
+          <h1 class="text-2xl font-semibold tracking-tight">创建账号</h1>
+          <p class="text-sm text-muted-foreground">输入邮箱即可注册控制台账号</p>
         </div>
-        <div class="grid gap-2">
-          <Label for="confirmPassword">确认密码</Label>
-          <Input id="confirmPassword" type="password" placeholder="请再次输入密码" v-model="confirmPassword" @keyup.enter="register" />
+
+        <div class="mt-8 space-y-4">
+          <div
+            v-if="errorMsg"
+            class="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-3 text-sm text-destructive"
+          >
+            <CircleAlert class="mt-0.5 size-4 shrink-0" />
+            <span>{{ errorMsg }}</span>
+          </div>
+
+          <form class="space-y-4" @submit.prevent="register">
+            <div class="space-y-2">
+              <Label for="email">邮箱</Label>
+              <Input
+                id="email"
+                type="email"
+                autocomplete="email"
+                placeholder="you@example.com"
+                v-model="email"
+              />
+            </div>
+            <div class="space-y-2">
+              <Label for="password">密码</Label>
+              <Input
+                id="password"
+                type="password"
+                autocomplete="new-password"
+                placeholder="至少 6 位"
+                v-model="password"
+              />
+            </div>
+            <div class="space-y-2">
+              <Label for="confirmPassword">确认密码</Label>
+              <Input
+                id="confirmPassword"
+                type="password"
+                autocomplete="new-password"
+                placeholder="再次输入密码"
+                v-model="confirmPassword"
+              />
+            </div>
+            <Button type="submit" class="w-full" :disabled="loading">
+              {{ loading ? '注册中…' : '注册' }}
+            </Button>
+          </form>
+
+          <p class="text-center text-sm text-muted-foreground">
+            已有账号？
+            <router-link to="/login" class="font-medium text-primary hover:underline">直接登录</router-link>
+          </p>
         </div>
-      </CardContent>
-      <CardFooter class="flex flex-col gap-4">
-        <Button class="w-full" @click="register" :disabled="loading">
-          {{ loading ? '注册中...' : '注册' }}
-        </Button>
-        <div class="text-sm text-center text-muted-foreground w-full">
-           <router-link to="/login" class="hover:underline">已有账号？去登录</router-link>
-        </div>
-      </CardFooter>
-    </Card>
+      </div>
+    </div>
   </div>
 </template>

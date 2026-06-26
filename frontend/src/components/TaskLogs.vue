@@ -36,15 +36,18 @@ const connectionLabel = computed(() => {
   }
 })
 
-const connectionColor = computed(() => {
+const connectionTone = computed<'success' | 'warning' | 'muted'>(() => {
   switch (connectionState.value) {
-    case 'connected': return 'bg-emerald-500'
+    case 'connected': return 'success'
     case 'connecting':
-    case 'reconnecting': return 'bg-amber-500 animate-pulse'
-    case 'disconnected': return 'bg-zinc-500'
-    default: return 'bg-zinc-500'
+    case 'reconnecting': return 'warning'
+    case 'disconnected': return 'muted'
+    default: return 'muted'
   }
 })
+const connectionPulse = computed(() =>
+  connectionState.value === 'connecting' || connectionState.value === 'reconnecting'
+)
 
 // Auto-scroll when new logs arrive
 watch(() => logs.value.length, () => {
@@ -88,12 +91,12 @@ const formatTime = (ts: string) => {
 </script>
 
 <template>
-  <Card class="flex flex-col h-full overflow-hidden">
-    <CardHeader class="flex flex-row items-center justify-between border-b px-4 py-3 bg-muted/50">
+  <Card class="flex h-full flex-col overflow-hidden shadow-none">
+    <CardHeader class="flex flex-row items-center justify-between border-b bg-muted/50 px-4 py-3">
       <div class="flex items-center gap-2">
         <CardTitle class="text-sm font-medium">任务日志</CardTitle>
         <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span class="inline-block w-2 h-2 rounded-full" :class="connectionColor" />
+          <span class="status-dot" :data-tone="connectionTone" :data-pulse="connectionPulse" />
           {{ connectionLabel }}
         </span>
       </div>
@@ -108,9 +111,9 @@ const formatTime = (ts: string) => {
         </Button>
       </div>
     </CardHeader>
-    <CardContent class="p-0 flex-1 overflow-hidden relative">
+    <CardContent class="relative flex-1 overflow-hidden p-0">
       <div
-        class="absolute inset-0 overflow-y-auto bg-zinc-950 text-zinc-300 p-4 font-mono text-xs leading-relaxed"
+        class="terminal absolute inset-0 overflow-y-auto p-4 text-xs leading-relaxed"
         ref="logContainerRef"
       >
         <div
@@ -118,28 +121,28 @@ const formatTime = (ts: string) => {
           :key="log.id"
           class="mb-1 flex gap-2"
         >
-          <span class="text-zinc-500 whitespace-nowrap">{{ formatTime(log.ts) }}</span>
+          <span class="terminal-time whitespace-nowrap">{{ formatTime(log.ts) }}</span>
           <span
-            class="font-bold whitespace-nowrap"
+            class="whitespace-nowrap font-bold"
             :class="{
-              'text-sky-400': log.level === 'INFO',
-              'text-orange-400': log.level === 'WARN',
-              'text-red-400': log.level === 'ERROR'
+              'terminal-info': log.level === 'INFO',
+              'terminal-warn': log.level === 'WARN',
+              'terminal-error': log.level === 'ERROR'
             }"
           >
             [{{ log.level }}]
           </span>
           <span class="whitespace-pre-wrap">{{ log.line }}</span>
         </div>
-        <div v-if="logs.length === 0 && historyLoaded" class="h-full flex items-center justify-center text-zinc-600">
+        <div v-if="logs.length === 0 && historyLoaded" class="flex h-full items-center justify-center text-zinc-600">
           暂无日志
         </div>
-        <div v-else-if="logs.length === 0 && !historyLoaded" class="h-full flex items-center justify-center text-zinc-600">
+        <div v-else-if="logs.length === 0 && !historyLoaded" class="flex h-full items-center justify-center text-zinc-600">
           <span v-if="connectionState === 'connecting' || connectionState === 'reconnecting'">
-            正在连接...
+            正在连接…
           </span>
           <span v-else>
-            等待日志...
+            等待日志…
           </span>
         </div>
       </div>

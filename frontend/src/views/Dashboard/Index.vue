@@ -7,25 +7,19 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import BuildLogModal from '@/components/BuildLogModal.vue'
 import {
-  Activity,
   Bot,
   CheckCircle2,
   ChevronRight,
-  CircleAlert,
-  Clock3,
+  CircleDot,
   FolderGit2,
   Gauge,
   Globe,
-  HeartPulse,
   ListTodo,
   Sparkles,
-  Wrench,
 } from 'lucide-vue-next'
 
 type OverviewStats = {
-  projects: {
-    total: number
-  }
+  projects: { total: number }
   sites: {
     total: number
     running: number
@@ -43,18 +37,8 @@ type OverviewStats = {
     canceled: number
     success_rate: number
   }
-  providers: {
-    codex: number
-    claude_code: number
-    gemini_cli: number
-  }
-  tokens: {
-    tracked: boolean
-    tracked_tasks: number
-    input: number
-    output: number
-    total: number
-  }
+  providers: { codex: number; claude_code: number; gemini_cli: number }
+  tokens: { tracked: boolean; tracked_tasks: number; input: number; output: number; total: number }
   recent_tasks: Array<{
     id: string
     site_id: string
@@ -71,9 +55,7 @@ type OverviewStats = {
     created_at: string | null
     source: string
   }>
-  templates: {
-    linked_sites: number
-  }
+  templates: { linked_sites: number }
 }
 
 const router = useRouter()
@@ -89,10 +71,7 @@ const stats = ref<OverviewStats>({
   templates: { linked_sites: 0 },
 })
 
-const health = ref<{ components: Record<string, { status: string }> }>({
-  components: {},
-})
-
+const health = ref<{ components: Record<string, { status: string }> }>({ components: {} })
 const loading = ref(true)
 
 const buildLogOpen = ref(false)
@@ -105,62 +84,59 @@ function openBuildLog(siteId: string, name: string) {
   buildLogOpen.value = true
 }
 
-const topProvider = computed(() => {
-  const items = [
-    { key: 'codex', label: 'Codex', value: stats.value.providers.codex },
-    { key: 'claude_code', label: 'Claude Code', value: stats.value.providers.claude_code },
-    { key: 'gemini_cli', label: 'Gemini', value: stats.value.providers.gemini_cli },
-  ]
-  return items.sort((a, b) => b.value - a.value)[0]
-})
+// The thesis number: what an operator cares about most right now.
+const primaryMetric = computed(() => ({
+  running: stats.value.tasks.running,
+  queued: stats.value.tasks.queued,
+}))
 
 const overviewCards = computed(() => [
   {
     title: '项目总数',
     value: stats.value.projects.total,
-    helper: `包含 ${stats.value.sites.total} 个站点`,
+    helper: `${stats.value.sites.total} 个站点 · ${stats.value.sites.running} 运行中`,
     icon: Globe,
-    iconClass: 'text-sky-600',
-    panelClass: 'from-sky-500/15 via-sky-400/5 to-transparent',
+    tone: 'primary' as const,
   },
   {
     title: '任务总量',
     value: stats.value.tasks.total,
-    helper: `${stats.value.tasks.running} 个正在执行`,
+    helper: `${stats.value.tasks.running} 运行中 · ${stats.value.tasks.queued} 排队`,
     icon: ListTodo,
-    iconClass: 'text-amber-600',
-    panelClass: 'from-amber-500/15 via-amber-400/5 to-transparent',
+    tone: 'warning' as const,
   },
   {
-    title: 'Codex 使用次数',
-    value: stats.value.providers.codex,
-    helper: `Claude Code ${stats.value.providers.claude_code} 次`,
+    title: 'AI 调用次数',
+    value: stats.value.providers.codex + stats.value.providers.claude_code + stats.value.providers.gemini_cli,
+    helper: `Codex ${stats.value.providers.codex} · Claude ${stats.value.providers.claude_code}`,
     icon: Bot,
-    iconClass: 'text-emerald-600',
-    panelClass: 'from-emerald-500/15 via-emerald-400/5 to-transparent',
+    tone: 'success' as const,
   },
   {
     title: '任务成功率',
     value: `${stats.value.tasks.success_rate}%`,
     helper: `${stats.value.tasks.success} 成功 / ${stats.value.tasks.failed} 失败`,
     icon: Gauge,
-    iconClass: 'text-violet-600',
-    panelClass: 'from-violet-500/15 via-violet-400/5 to-transparent',
+    tone: 'primary' as const,
   },
 ])
 
-const tokenCards = computed(() => [
-  { label: '输入 Token', value: stats.value.tokens.input },
-  { label: '输出 Token', value: stats.value.tokens.output },
-  { label: '总 Token', value: stats.value.tokens.total },
-])
+const providerBars = computed(() => {
+  const items = [
+    { label: 'Codex', value: stats.value.providers.codex },
+    { label: 'Claude Code', value: stats.value.providers.claude_code },
+    { label: 'Gemini', value: stats.value.providers.gemini_cli },
+  ]
+  const max = Math.max(...items.map((i) => i.value), 1)
+  return items.map((i) => ({ ...i, pct: Math.round((i.value / max) * 100) }))
+})
 
 const taskStatusItems = computed(() => [
-  { label: '排队中', value: stats.value.tasks.queued, class: 'bg-zinc-100 text-zinc-700 border-zinc-200' },
-  { label: '运行中', value: stats.value.tasks.running, class: 'bg-sky-100 text-sky-700 border-sky-200' },
-  { label: '成功', value: stats.value.tasks.success, class: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
-  { label: '失败', value: stats.value.tasks.failed, class: 'bg-red-100 text-red-700 border-red-200' },
-  { label: '取消', value: stats.value.tasks.canceled, class: 'bg-zinc-100 text-zinc-600 border-zinc-200' },
+  { label: '排队', value: stats.value.tasks.queued, tone: 'muted' as const },
+  { label: '运行', value: stats.value.tasks.running, tone: 'warning' as const },
+  { label: '成功', value: stats.value.tasks.success, tone: 'success' as const },
+  { label: '失败', value: stats.value.tasks.failed, tone: 'danger' as const },
+  { label: '取消', value: stats.value.tasks.canceled, tone: 'muted' as const },
 ])
 
 function formatNumber(value: number) {
@@ -174,29 +150,24 @@ function providerLabel(provider: string) {
   return provider || 'System'
 }
 
+function taskStatusTone(status: string): 'muted' | 'warning' | 'success' | 'danger' {
+  return ({ queued: 'muted', running: 'warning', success: 'success', failed: 'danger', canceled: 'muted' } as const)[status as 'queued'] ?? 'muted'
+}
+
 function taskStatusLabel(status: string) {
-  return {
-    queued: '排队中',
-    running: '运行中',
-    success: '成功',
-    failed: '失败',
-    canceled: '已取消',
-  }[status] || status
+  return ({ queued: '排队中', running: '运行中', success: '成功', failed: '失败', canceled: '已取消' } as const)[status as 'queued'] || status
 }
 
 function siteStatusLabel(status: string) {
-  return {
-    running: '运行中',
-    stopped: '已停止',
-    building: '构建中',
-    error: '异常',
-  }[status] || status
+  return ({ running: '运行中', stopped: '已停止', building: '构建中', error: '异常' } as const)[status as 'running'] || status
 }
 
-function healthTone(status: string) {
-  return status === 'ok'
-    ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
-    : 'bg-red-100 text-red-700 border-red-200'
+function siteStatusTone(status: string): 'success' | 'muted' | 'warning' | 'danger' {
+  return ({ running: 'success', stopped: 'muted', building: 'warning', error: 'danger' } as const)[status as 'running'] ?? 'muted'
+}
+
+function healthTone(status: string): 'success' | 'danger' {
+  return status === 'ok' ? 'success' : 'danger'
 }
 
 onMounted(async () => {
@@ -205,12 +176,9 @@ onMounted(async () => {
     const data = await client.get('/stats/overview') as unknown as OverviewStats
     if (data) stats.value = data
   } catch {}
-
   try {
     const res = await fetch('/api/health')
-    if (res.ok) {
-      health.value = await res.json()
-    }
+    if (res.ok) health.value = await res.json()
   } catch {}
   loading.value = false
 })
@@ -218,163 +186,199 @@ onMounted(async () => {
 
 <template>
   <div class="space-y-6">
-    <section class="relative overflow-hidden rounded-3xl border bg-gradient-to-br from-[#f4f8ff] via-[#fffaf2] to-[#f6fff7] p-6 shadow-sm">
-      <div class="absolute -right-12 top-0 h-40 w-40 rounded-full bg-sky-200/30 blur-3xl" />
-      <div class="absolute bottom-0 left-0 h-32 w-32 rounded-full bg-emerald-200/30 blur-3xl" />
-      <div class="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div class="space-y-3">
-          <div class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/70 px-3 py-1 text-xs text-slate-600 backdrop-blur">
-            <Sparkles class="h-3.5 w-3.5 text-amber-500" />
-            NextProject 控制台
+    <!-- Thesis hero: the one number that matters -->
+    <section class="overflow-hidden rounded-xl border bg-card">
+      <div class="grid gap-px bg-border sm:grid-cols-3">
+        <!-- Primary metric -->
+        <div class="bg-card p-6 sm:col-span-1">
+          <div class="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <CircleDot class="size-3.5 text-primary" />
+            实时任务
           </div>
-          <div>
-            <h1 class="text-3xl font-bold tracking-tight text-slate-900">系统概览</h1>
-            <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-              从站点、任务、AI 使用和服务健康四个维度看当前系统状态。首页重点展示可直接驱动决策的数据，而不是只放几个静态数字。
-            </p>
+          <div class="mt-4 flex items-baseline gap-2">
+            <span class="stat-num text-5xl text-foreground">{{ formatNumber(primaryMetric.running) }}</span>
+            <span class="text-sm text-muted-foreground">运行中</span>
+          </div>
+          <div class="mt-1 font-mono-data text-xs text-muted-foreground">
+            + {{ formatNumber(primaryMetric.queued) }} 排队
           </div>
         </div>
-        <div class="grid gap-3 sm:grid-cols-3">
-          <Button @click="router.push('/sites')" class="gap-2">
-            <Globe class="h-4 w-4" />
-            管理站点
-          </Button>
-          <Button variant="secondary" @click="router.push('/tasks')" class="gap-2">
-            <ListTodo class="h-4 w-4" />
-            查看任务
-          </Button>
-          <Button variant="outline" @click="router.push('/templates')" class="gap-2 bg-white/70">
-            <Wrench class="h-4 w-4" />
-            模板市场
-          </Button>
+
+        <!-- Context + actions -->
+        <div class="bg-card p-6 sm:col-span-2">
+          <div class="flex h-full flex-col justify-between gap-5">
+            <div>
+              <h1 class="text-xl font-semibold tracking-tight">系统概览</h1>
+              <p class="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
+                从站点、任务、AI 调用和服务健康四个维度，掌握当前系统状态，并直接驱动下一步操作。
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <Button @click="router.push('/projects')">
+                <Globe class="size-4" />
+                管理项目
+              </Button>
+              <Button variant="outline" @click="router.push('/tasks')">
+                <ListTodo class="size-4" />
+                查看任务
+              </Button>
+              <Button variant="outline" @click="router.push('/templates')">
+                <Sparkles class="size-4" />
+                模板市场
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
     </section>
 
-    <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <Card
-        v-for="card in overviewCards"
-        :key="card.title"
-        class="relative overflow-hidden border-0 bg-white shadow-sm"
-      >
-        <div class="absolute inset-0 bg-gradient-to-br" :class="card.panelClass" />
-        <CardHeader class="relative flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle class="text-sm font-medium text-slate-600">{{ card.title }}</CardTitle>
-          <component :is="card.icon" class="h-4 w-4" :class="card.iconClass" />
+    <!-- Stat cards -->
+    <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <Card v-for="card in overviewCards" :key="card.title" class="shadow-none">
+        <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle class="text-sm font-medium text-muted-foreground">{{ card.title }}</CardTitle>
+          <div
+            class="flex size-8 items-center justify-center rounded-lg"
+            :class="{
+              'bg-primary/10 text-primary': card.tone === 'primary',
+              'bg-warning/10 text-warning': card.tone === 'warning',
+              'bg-success/10 text-success': card.tone === 'success',
+            }"
+          >
+            <component :is="card.icon" class="size-4" />
+          </div>
         </CardHeader>
-        <CardContent class="relative">
-          <div class="text-3xl font-bold tracking-tight text-slate-900">
+        <CardContent>
+          <div class="stat-num text-3xl text-foreground">
             {{ typeof card.value === 'number' ? formatNumber(card.value) : card.value }}
           </div>
-          <p class="mt-1 text-xs text-slate-500">{{ card.helper }}</p>
+          <p class="mt-1.5 font-mono-data text-xs text-muted-foreground">{{ card.helper }}</p>
         </CardContent>
       </Card>
     </section>
 
+    <!-- AI usage + run status -->
     <section class="grid gap-4 xl:grid-cols-[1.3fr_1fr]">
-      <Card class="border-0 shadow-sm">
+      <!-- AI usage -->
+      <Card class="shadow-none">
         <CardHeader class="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>AI 使用面板</CardTitle>
-            <p class="mt-1 text-sm text-muted-foreground">关注各代理使用频率和当前 token 记录情况</p>
-          </div>
-          <div class="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
-            最活跃：{{ topProvider.label }}
+            <CardTitle>AI 调用</CardTitle>
+            <p class="mt-1 text-sm text-muted-foreground">各代理使用频率与 Token 消耗</p>
           </div>
         </CardHeader>
         <CardContent class="space-y-5">
-          <div class="grid gap-3 md:grid-cols-3">
-            <div class="rounded-2xl border bg-slate-50 p-4">
-              <div class="text-xs text-slate-500">Codex</div>
-              <div class="mt-2 text-2xl font-semibold text-slate-900">{{ formatNumber(stats.providers.codex) }}</div>
-            </div>
-            <div class="rounded-2xl border bg-slate-50 p-4">
-              <div class="text-xs text-slate-500">Claude Code</div>
-              <div class="mt-2 text-2xl font-semibold text-slate-900">{{ formatNumber(stats.providers.claude_code) }}</div>
-            </div>
-            <div class="rounded-2xl border bg-slate-50 p-4">
-              <div class="text-xs text-slate-500">Gemini</div>
-              <div class="mt-2 text-2xl font-semibold text-slate-900">{{ formatNumber(stats.providers.gemini_cli) }}</div>
+          <div class="space-y-3">
+            <div v-for="item in providerBars" :key="item.label">
+              <div class="mb-1.5 flex items-center justify-between text-sm">
+                <span class="font-medium">{{ item.label }}</span>
+                <span class="stat-num text-base text-muted-foreground">{{ formatNumber(item.value) }}</span>
+              </div>
+              <div class="h-1.5 overflow-hidden rounded-full bg-muted">
+                <div
+                  class="h-full rounded-full bg-primary transition-all"
+                  :style="{ width: `${item.pct}%` }"
+                />
+              </div>
             </div>
           </div>
 
-          <div class="rounded-2xl border bg-gradient-to-r from-slate-950 to-slate-800 p-4 text-slate-50">
-            <div class="flex items-start justify-between gap-4">
-              <div>
-                <div class="text-sm font-medium">Token 消耗</div>
-                <p class="mt-1 text-xs text-slate-300">
-                  {{ stats.tokens.tracked ? `当前已统计 ${stats.tokens.tracked_tasks} 条带 usage 的任务结果` : '当前任务结果里还没有记录 usage 字段，Token 统计暂未接入' }}
-                </p>
-              </div>
-              <div class="rounded-full border border-white/15 px-3 py-1 text-xs text-slate-200">
-                {{ stats.tokens.tracked ? '已接入' : '未接入' }}
-              </div>
+          <div class="rounded-lg border bg-muted/30 p-4">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-medium">Token 消耗</span>
+              <span
+                class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium"
+                :class="stats.tokens.tracked
+                  ? 'border-success/30 bg-success/10 text-success'
+                  : 'border-border bg-muted text-muted-foreground'"
+              >
+                <span
+                  class="status-dot"
+                  :data-tone="stats.tokens.tracked ? 'success' : 'muted'"
+                />
+                {{ stats.tokens.tracked ? '已统计' : '未接入' }}
+              </span>
             </div>
-            <div class="mt-4 grid gap-3 sm:grid-cols-3">
-              <div v-for="item in tokenCards" :key="item.label" class="rounded-xl bg-white/5 p-3">
-                <div class="text-[11px] uppercase tracking-wide text-slate-400">{{ item.label }}</div>
-                <div class="mt-2 text-2xl font-semibold">{{ formatNumber(item.value) }}</div>
+            <p class="mt-1.5 text-xs text-muted-foreground">
+              {{ stats.tokens.tracked
+                ? `当前已统计 ${stats.tokens.tracked_tasks} 条带 usage 的任务结果`
+                : '任务结果尚未记录 usage 字段，Token 统计暂未接入' }}
+            </p>
+            <div class="mt-3 grid grid-cols-3 gap-3">
+              <div>
+                <div class="font-mono-data text-[11px] uppercase tracking-wide text-muted-foreground">输入</div>
+                <div class="stat-num mt-1 text-lg text-foreground">{{ formatNumber(stats.tokens.input) }}</div>
+              </div>
+              <div>
+                <div class="font-mono-data text-[11px] uppercase tracking-wide text-muted-foreground">输出</div>
+                <div class="stat-num mt-1 text-lg text-foreground">{{ formatNumber(stats.tokens.output) }}</div>
+              </div>
+              <div>
+                <div class="font-mono-data text-[11px] uppercase tracking-wide text-muted-foreground">合计</div>
+                <div class="stat-num mt-1 text-lg text-foreground">{{ formatNumber(stats.tokens.total) }}</div>
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <Card class="border-0 shadow-sm">
-        <CardHeader class="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>运行态势</CardTitle>
-            <p class="mt-1 text-sm text-muted-foreground">站点来源、模板覆盖和任务状态分布</p>
-          </div>
-          <Activity class="h-4 w-4 text-slate-400" />
+      <!-- Run status -->
+      <Card class="shadow-none">
+        <CardHeader>
+          <CardTitle>运行态势</CardTitle>
+          <p class="mt-1 text-sm text-muted-foreground">任务状态分布与服务健康</p>
         </CardHeader>
         <CardContent class="space-y-5">
-          <div class="grid gap-3 sm:grid-cols-2">
-            <div class="rounded-2xl border bg-slate-50 p-4">
-              <div class="flex items-center gap-2 text-sm text-slate-600">
-                <FolderGit2 class="h-4 w-4 text-slate-500" />
+          <div class="grid grid-cols-2 gap-3">
+            <div class="rounded-lg border bg-muted/30 p-3.5">
+              <div class="flex items-center gap-2 text-xs text-muted-foreground">
+                <FolderGit2 class="size-3.5" />
                 Git 站点
               </div>
-              <div class="mt-2 text-2xl font-semibold text-slate-900">{{ formatNumber(stats.sites.git_linked) }}</div>
+              <div class="stat-num mt-1.5 text-2xl text-foreground">{{ formatNumber(stats.sites.git_linked) }}</div>
             </div>
-            <div class="rounded-2xl border bg-slate-50 p-4">
-              <div class="flex items-center gap-2 text-sm text-slate-600">
-                <Sparkles class="h-4 w-4 text-slate-500" />
-                模板创建站点
+            <div class="rounded-lg border bg-muted/30 p-3.5">
+              <div class="flex items-center gap-2 text-xs text-muted-foreground">
+                <Sparkles class="size-3.5" />
+                模板创建
               </div>
-              <div class="mt-2 text-2xl font-semibold text-slate-900">{{ formatNumber(stats.templates.linked_sites) }}</div>
+              <div class="stat-num mt-1.5 text-2xl text-foreground">{{ formatNumber(stats.templates.linked_sites) }}</div>
             </div>
           </div>
 
           <div>
-            <div class="mb-2 text-sm font-medium text-slate-800">任务状态分布</div>
-            <div class="flex flex-wrap gap-2">
+            <div class="mb-2 text-sm font-medium">任务状态分布</div>
+            <div class="space-y-1.5">
               <div
                 v-for="item in taskStatusItems"
                 :key="item.label"
-                class="rounded-full border px-3 py-1 text-xs font-medium"
-                :class="item.class"
+                class="flex items-center justify-between rounded-md border bg-card px-3 py-1.5 text-sm"
               >
-                {{ item.label }} {{ formatNumber(item.value) }}
+                <span class="flex items-center gap-2">
+                  <span class="status-dot" :data-tone="item.tone" :data-pulse="item.label === '运行'" />
+                  {{ item.label }}
+                </span>
+                <span class="stat-num text-sm text-muted-foreground">{{ formatNumber(item.value) }}</span>
               </div>
             </div>
           </div>
 
           <div>
-            <div class="mb-2 text-sm font-medium text-slate-800">服务健康</div>
-            <div class="space-y-2" v-if="Object.keys(health.components).length">
+            <div class="mb-2 text-sm font-medium">服务健康</div>
+            <div v-if="Object.keys(health.components).length" class="space-y-1.5">
               <div
                 v-for="(info, name) in health.components"
                 :key="name"
-                class="flex items-center justify-between rounded-xl border px-3 py-2"
+                class="flex items-center justify-between rounded-md border bg-card px-3 py-1.5 text-sm"
               >
-                <span class="text-sm text-slate-700">{{ name }}</span>
-                <span class="rounded-full border px-2.5 py-1 text-xs font-medium" :class="healthTone(info.status)">
-                  {{ info.status }}
+                <span class="text-muted-foreground">{{ name }}</span>
+                <span class="flex items-center gap-1.5">
+                  <span class="status-dot" :data-tone="healthTone(info.status)" />
+                  <span class="font-mono-data text-xs">{{ info.status }}</span>
                 </span>
               </div>
             </div>
-            <div v-else class="rounded-xl border border-dashed px-3 py-6 text-sm text-muted-foreground">
+            <div v-else class="rounded-md border border-dashed px-3 py-5 text-center text-sm text-muted-foreground">
               暂无健康数据
             </div>
           </div>
@@ -382,94 +386,102 @@ onMounted(async () => {
       </Card>
     </section>
 
-    <section class="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-      <Card class="border-0 shadow-sm">
+    <!-- Recent activity -->
+    <section class="grid gap-4 xl:grid-cols-2">
+      <!-- Recent tasks -->
+      <Card class="shadow-none">
         <CardHeader class="flex flex-row items-center justify-between">
           <div>
             <CardTitle>最近任务</CardTitle>
-            <p class="mt-1 text-sm text-muted-foreground">快速回看最近的 AI 开发、部署和测试活动</p>
+            <p class="mt-1 text-sm text-muted-foreground">最近的编码、部署与测试活动</p>
           </div>
-          <Button variant="ghost" size="sm" class="gap-1" @click="router.push('/tasks')">
-            全部任务
-            <ChevronRight class="h-4 w-4" />
+          <Button variant="ghost" size="sm" class="gap-1 text-muted-foreground" @click="router.push('/tasks')">
+            全部
+            <ChevronRight class="size-4" />
           </Button>
         </CardHeader>
         <CardContent>
-          <div v-if="stats.recent_tasks.length" class="space-y-2">
+          <div v-if="stats.recent_tasks.length" class="divide-y divide-border">
             <button
               v-for="task in stats.recent_tasks"
               :key="task.id"
               type="button"
-              class="flex w-full items-center gap-3 rounded-2xl border bg-white px-3 py-3 text-left transition-colors hover:bg-slate-50"
+              class="flex w-full items-center gap-3 py-2.5 text-left transition-colors hover:bg-muted/40"
               @click="router.push('/tasks')"
             >
-              <div class="rounded-xl bg-slate-100 p-2">
-                <Bot class="h-4 w-4 text-slate-600" />
+              <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <Bot class="size-4" />
               </div>
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
-                  <span class="text-sm font-medium text-slate-900">{{ providerLabel(task.provider) }}</span>
-                  <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">{{ taskStatusLabel(task.status) }}</span>
+                  <span class="text-sm font-medium">{{ providerLabel(task.provider) }}</span>
+                  <span class="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span class="status-dot" :data-tone="taskStatusTone(task.status)" />
+                    {{ taskStatusLabel(task.status) }}
+                  </span>
                 </div>
-                <div class="mt-1 text-xs text-slate-500">
-                  站点 {{ task.site_id }} · {{ task.task_type }} · {{ formatDate(task.finished_at || task.created_at || '') }}
+                <div class="mt-0.5 truncate font-mono-data text-xs text-muted-foreground">
+                  {{ task.site_id }} · {{ task.task_type }} · {{ formatDate(task.finished_at || task.created_at || '') }}
                 </div>
               </div>
             </button>
           </div>
-          <div v-else class="rounded-2xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+          <div v-else class="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
             还没有任务活动
           </div>
         </CardContent>
       </Card>
 
-      <Card class="border-0 shadow-sm">
+      <!-- Recent sites -->
+      <Card class="shadow-none">
         <CardHeader class="flex flex-row items-center justify-between">
           <div>
             <CardTitle>最近站点</CardTitle>
-            <p class="mt-1 text-sm text-muted-foreground">查看最近创建或更新的站点，以及它们的来源</p>
+            <p class="mt-1 text-sm text-muted-foreground">最近创建或更新的站点</p>
           </div>
-          <HeartPulse class="h-4 w-4 text-slate-400" />
+          <Button variant="ghost" size="sm" class="gap-1 text-muted-foreground" @click="router.push('/projects')">
+            全部
+            <ChevronRight class="size-4" />
+          </Button>
         </CardHeader>
         <CardContent>
-          <div v-if="stats.recent_sites.length" class="space-y-2">
+          <div v-if="stats.recent_sites.length" class="divide-y divide-border">
             <button
               v-for="site in stats.recent_sites"
               :key="site.site_id"
               type="button"
-              class="flex w-full items-center gap-3 rounded-2xl border bg-white px-3 py-3 text-left transition-colors hover:bg-slate-50"
+              class="flex w-full items-center gap-3 py-2.5 text-left transition-colors hover:bg-muted/40"
               @click="router.push({ name: 'SiteEditor', params: { id: site.site_id } })"
             >
-              <div class="rounded-xl p-2" :class="site.source === 'git' ? 'bg-emerald-100' : 'bg-slate-100'">
-                <component :is="site.source === 'git' ? FolderGit2 : Globe" class="h-4 w-4" :class="site.source === 'git' ? 'text-emerald-700' : 'text-slate-600'" />
+              <div
+                class="flex size-8 shrink-0 items-center justify-center rounded-lg"
+                :class="site.source === 'git' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'"
+              >
+                <component :is="site.source === 'git' ? FolderGit2 : Globe" class="size-4" />
               </div>
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
-                  <span class="truncate text-sm font-medium text-slate-900">{{ site.name }}</span>
-                  <span
+                  <span class="truncate text-sm font-medium">{{ site.name }}</span>
+                  <button
                     v-if="site.status === 'building'"
-                    class="rounded-full bg-yellow-100 px-2 py-0.5 text-[11px] text-yellow-700 cursor-pointer hover:bg-yellow-200"
-                    role="button"
-                    tabindex="0"
+                    type="button"
+                    class="flex items-center gap-1 text-xs text-warning hover:underline"
                     @click.stop="openBuildLog(site.site_id, site.name)"
-                    @keyup.enter.stop="openBuildLog(site.site_id, site.name)"
                   >
-                    {{ siteStatusLabel(site.status) }}（查看日志）
-                  </span>
-                  <span
-                    v-else
-                    class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600"
-                  >
+                    构建中 · 看日志
+                  </button>
+                  <span v-else class="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span class="status-dot" :data-tone="siteStatusTone(site.status)" />
                     {{ siteStatusLabel(site.status) }}
                   </span>
                 </div>
-                <div class="mt-1 text-xs text-slate-500">
+                <div class="mt-0.5 truncate font-mono-data text-xs text-muted-foreground">
                   {{ site.site_id }} · {{ site.source === 'git' ? 'Git 导入' : '空白/模板' }} · {{ formatDate(site.created_at || '') }}
                 </div>
               </div>
             </button>
           </div>
-          <div v-else class="rounded-2xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+          <div v-else class="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
             还没有站点数据
           </div>
         </CardContent>

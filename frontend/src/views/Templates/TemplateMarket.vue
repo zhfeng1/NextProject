@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Users, Star } from 'lucide-vue-next'
+import { Users, Star, LayoutTemplate } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 
 const router = useRouter()
@@ -66,6 +66,7 @@ const createFromTemplate = async () => {
       site_name: siteName.value,
     })
     showUseDialog.value = false
+    toast.success('站点已创建')
     router.push({ name: 'SiteEditor', params: { id: response.site.site_id } })
   } catch (error) {
     toast.error('创建失败，请稍后重试')
@@ -75,51 +76,65 @@ const createFromTemplate = async () => {
 
 <template>
   <div class="space-y-6">
-    <h1 class="text-3xl font-bold tracking-tight">模板市场</h1>
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">模板市场</h1>
+      <p class="mt-1 text-sm text-muted-foreground">从模板一键创建站点，开箱即用</p>
+    </div>
 
-    <!-- 类别 Tab -->
-    <div class="flex gap-2 border-b pb-2 overflow-x-auto">
-      <button 
-        v-for="cat in categories" 
+    <!-- Category tabs -->
+    <div class="flex gap-1 overflow-x-auto border-b">
+      <button
+        v-for="cat in categories"
         :key="cat.id"
         @click="activeCategory = cat.id; fetchTemplates()"
-        class="px-4 py-2 text-sm font-medium transition-colors hover:text-primary whitespace-nowrap"
-        :class="activeCategory === cat.id ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground border-b-2 border-transparent'"
+        class="-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors"
+        :class="activeCategory === cat.id
+          ? 'border-primary text-primary'
+          : 'border-transparent text-muted-foreground hover:text-foreground'"
       >
         {{ cat.label }}
       </button>
     </div>
 
-    <!-- 模板卡片网格 -->
-    <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      <Card v-for="template in templates" :key="template.id" class="flex flex-col overflow-hidden hover:shadow-md transition-shadow">
+    <!-- Template grid -->
+    <div v-if="templates.length" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <Card
+        v-for="template in templates"
+        :key="template.id"
+        class="flex flex-col overflow-hidden shadow-none transition-all hover:border-primary/40 hover:shadow-sm"
+      >
         <div class="aspect-video w-full overflow-hidden bg-muted">
-          <img v-if="template.thumbnail_url" :src="template.thumbnail_url" :alt="template.name" class="w-full h-full object-cover" />
-          <div v-else class="w-full h-full flex items-center justify-center text-muted-foreground">暂无预览</div>
+          <img v-if="template.thumbnail_url" :src="template.thumbnail_url" :alt="template.name" class="h-full w-full object-cover" />
+          <div v-else class="flex h-full w-full items-center justify-center text-muted-foreground/40">
+            <LayoutTemplate class="size-8" />
+          </div>
         </div>
-        <CardHeader class="flex flex-col gap-1 p-4">
+        <CardHeader class="gap-1 p-4">
           <CardTitle class="text-base">{{ template.name }}</CardTitle>
           <CardDescription class="line-clamp-2 h-10">{{ template.description }}</CardDescription>
         </CardHeader>
-        <CardContent class="p-4 pt-0 flex-1 flex flex-col justify-end">
-          <div class="flex items-center justify-between mt-auto">
-            <div class="flex items-center text-sm text-yellow-500 font-medium space-x-1">
-              <Star class="w-4 h-4 fill-current" />
-              <span>{{ template.rating }}</span>
-            </div>
-            <div class="flex items-center text-sm text-muted-foreground space-x-1">
-              <Users class="w-4 h-4" />
-              <span>{{ template.usage_count }}</span>
-            </div>
+        <CardContent class="flex flex-1 items-end justify-between p-4 pt-0 text-sm">
+          <div class="flex items-center gap-1 font-medium text-warning">
+            <Star class="size-4 fill-current" />
+            <span class="font-mono-data">{{ template.rating }}</span>
+          </div>
+          <div class="flex items-center gap-1 text-muted-foreground">
+            <Users class="size-4" />
+            <span class="font-mono-data">{{ template.usage_count }}</span>
           </div>
         </CardContent>
         <CardFooter class="p-4 pt-0">
-          <Button class="w-full" @click="useTemplate(template)">使用此模板</Button>
+          <Button class="w-full" variant="outline" @click="useTemplate(template)">使用此模板</Button>
         </CardFooter>
       </Card>
     </div>
 
-    <!-- 创建弹层 -->
+    <div v-else class="rounded-xl border border-dashed py-20 text-center">
+      <LayoutTemplate class="mx-auto size-8 text-muted-foreground/40" />
+      <p class="mt-3 text-sm text-muted-foreground">该分类下暂无模板</p>
+    </div>
+
+    <!-- Create dialog -->
     <Dialog :open="showUseDialog" @update:open="showUseDialog = $event">
       <DialogContent class="sm:max-w-[425px]">
         <DialogHeader>
@@ -128,7 +143,7 @@ const createFromTemplate = async () => {
         <div class="grid gap-4 py-4">
           <div class="grid grid-cols-4 items-center gap-4">
             <Label for="siteName" class="text-right">站点名称</Label>
-            <Input id="siteName" v-model="siteName" class="col-span-3" placeholder="例如: 我的博客" />
+            <Input id="siteName" v-model="siteName" class="col-span-3" placeholder="例如：我的博客" />
           </div>
         </div>
         <DialogFooter>

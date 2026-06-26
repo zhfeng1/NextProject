@@ -42,12 +42,8 @@ watch(() => props.provider, (v) => { if (v) selectedProvider.value = v })
 const STATUS_LABEL: Record<string, string> = {
   queued: '排队中', running: '运行中', success: '成功', failed: '失败', canceled: '已取消',
 }
-const STATUS_CLASS: Record<string, string> = {
-  queued: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300',
-  running: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
-  success: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
-  failed: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-  canceled: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400',
+const STATUS_TONE: Record<string, 'muted' | 'warning' | 'success' | 'danger'> = {
+  queued: 'muted', running: 'warning', success: 'success', failed: 'danger', canceled: 'muted',
 }
 
 // inline task status polling (per message)
@@ -268,7 +264,7 @@ watch(() => props.siteId, async () => {
         <span class="flex-1 truncate text-xs">{{ conv.title || '新会话' }}</span>
         <span class="shrink-0 text-[10px] text-muted-foreground">{{ conv.message_count }}条</span>
         <button
-          class="shrink-0 text-muted-foreground hover:text-red-500 transition-colors text-[11px]"
+          class="shrink-0 text-[11px] text-muted-foreground transition-colors hover:text-destructive"
           title="归档"
           @click.stop="archiveConversation(conv)"
         >✕</button>
@@ -319,16 +315,26 @@ watch(() => props.siteId, async () => {
               <span class="text-muted-foreground">AI 编码任务</span>
               <span
                 v-if="msg.task_id && taskStatuses[msg.task_id]"
-                class="rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-                :class="STATUS_CLASS[taskStatuses[msg.task_id]] || STATUS_CLASS.queued"
+                class="flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                :class="{
+                  'border-border bg-muted text-muted-foreground': STATUS_TONE[taskStatuses[msg.task_id]] === 'muted',
+                  'border-warning/30 bg-warning/10 text-warning': STATUS_TONE[taskStatuses[msg.task_id]] === 'warning',
+                  'border-success/30 bg-success/10 text-success': STATUS_TONE[taskStatuses[msg.task_id]] === 'success',
+                  'border-destructive/30 bg-destructive/10 text-destructive': STATUS_TONE[taskStatuses[msg.task_id]] === 'danger',
+                }"
               >
+                <span
+                  class="status-dot"
+                  :data-tone="STATUS_TONE[taskStatuses[msg.task_id]]"
+                  :data-pulse="taskStatuses[msg.task_id] === 'running'"
+                />
                 {{ STATUS_LABEL[taskStatuses[msg.task_id]] || taskStatuses[msg.task_id] }}
               </span>
               <span
                 v-else-if="msg.task_id"
-                class="rounded-full px-1.5 py-0.5 text-[10px] font-medium animate-pulse"
-                :class="STATUS_CLASS.queued"
+                class="flex items-center gap-1 rounded-full border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
               >
+                <span class="status-dot" data-tone="muted" data-pulse="true" />
                 排队中
               </span>
               <span
@@ -361,7 +367,7 @@ watch(() => props.siteId, async () => {
     </div>
 
     <!-- Error -->
-    <div v-if="error" class="px-3 py-1.5 text-xs text-red-600 bg-red-50 dark:bg-red-950/30 border-t shrink-0">
+    <div v-if="error" class="shrink-0 border-t border-destructive/30 bg-destructive/5 px-3 py-1.5 text-xs text-destructive">
       {{ error }}
       <button class="ml-2 underline" @click="error = ''">关闭</button>
     </div>
