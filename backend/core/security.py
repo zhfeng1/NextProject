@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import uuid
 from typing import Any
 
 from fastapi import Depends, HTTPException
@@ -12,6 +13,7 @@ from backend.core.database import get_db
 from backend.models import User
 
 from backend.core.config import get_settings
+from backend.core.auth_session import AuthSessionStoreUnavailable, auth_session_store
 
 
 settings = get_settings()
@@ -36,6 +38,8 @@ def _create_token(data: dict[str, Any], expires_delta: timedelta, token_type: st
     payload.update(
         {
             "exp": datetime.now(timezone.utc) + expires_delta,
+            "iat": datetime.now(timezone.utc),
+            "jti": str(uuid.uuid4()),
             "type": token_type,
         }
     )
@@ -70,14 +74,22 @@ async def get_current_user(
     try:
         payload = decode_token(token)
         user_id = payload.get("sub")
-        if user_id is None or payload.get("type") != "access":
+        session_id = payload.get("sid")
+        if user_id is None or not session_id or payload.get("type") != "access":
             raise credentials_exception
     except JWTError as exc:
         raise credentials_exception from exc
 
+    try:
+        session = await auth_session_store.get_session(str(session_id))
+    except AuthSessionStoreUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Login session service is unavailable") from exc
+    if session is None or str(session.get("user_id") or "") != str(user_id):
+        raise credentials_exception
+
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    if user is None:
+    if user is None or not bool(getattr(user, "is_active", True)):
         raise credentials_exception
     return user
 

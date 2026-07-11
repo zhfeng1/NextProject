@@ -21,6 +21,8 @@ from backend.core.security import (
     get_password_hash,
     verify_password,
 )
+from backend.core.auth_session import AuthSessionStoreUnavailable, auth_session_store
+from backend.core.config import get_settings
 
 
 class AuthService:
@@ -78,8 +80,19 @@ class AuthService:
         user = row.scalar_one_or_none()
         if user is None or not verify_password(password, user.password_hash):
             raise HTTPException(status_code=401, detail="Incorrect email or password")
-        access_token = create_access_token({"sub": str(user.id)})
-        refresh_token = create_refresh_token({"sub": str(user.id)})
+        session_id = str(uuid.uuid4())
+        try:
+            await auth_session_store.create_session(
+                session_id=session_id,
+                user_id=str(user.id),
+                ttl_seconds=get_settings().refresh_token_expire_days * 24 * 60 * 60,
+                metadata={"email": user.email},
+            )
+        except AuthSessionStoreUnavailable as exc:
+            raise HTTPException(status_code=503, detail="Login session service is unavailable") from exc
+        token_data = {"sub": str(user.id), "sid": session_id}
+        access_token = create_access_token(token_data)
+        refresh_token = create_refresh_token(token_data)
         return {
             "ok": True,
             "access_token": access_token,
@@ -95,18 +108,42 @@ class AuthService:
             if payload.get("type") != "refresh":
                 raise HTTPException(status_code=401, detail="Invalid token type")
             user_id = payload.get("sub")
+            session_id = payload.get("sid")
+            if not user_id or not session_id:
+                raise HTTPException(status_code=401, detail="Invalid refresh token")
         except JWTError as exc:
             raise HTTPException(status_code=401, detail="Invalid refresh token") from exc
+        try:
+            session = await auth_session_store.get_session(str(session_id))
+        except AuthSessionStoreUnavailable as exc:
+            raise HTTPException(status_code=503, detail="Login session service is unavailable") from exc
+        if session is None or str(session.get("user_id") or "") != str(user_id):
+            raise HTTPException(status_code=401, detail="Login session has expired")
         user = await db.get(User, user_id)
         if user is None:
             raise HTTPException(status_code=401, detail="Invalid refresh token")
-        access_token = create_access_token({"sub": str(user.id)})
+        access_token = create_access_token({"sub": str(user.id), "sid": str(session_id)})
         return {
             "ok": True,
             "access_token": access_token,
             "token_type": "bearer",
             "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         }
+
+    async def logout(self, token: str) -> dict[str, Any]:
+        session_id = ""
+        if token:
+            try:
+                payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                session_id = str(payload.get("sid") or "")
+            except JWTError:
+                session_id = ""
+        if session_id:
+            try:
+                await auth_session_store.delete_session(session_id)
+            except AuthSessionStoreUnavailable as exc:
+                raise HTTPException(status_code=503, detail="Login session service is unavailable") from exc
+        return {"ok": True}
 
     async def update_profile(self, db: AsyncSession, user: User, name: str | None, avatar_url: str | None) -> dict[str, Any]:
         if name is not None:

@@ -76,9 +76,7 @@ const login = async () => {
         style="background-image: radial-gradient(circle at 1px 1px, white 1px, transparent 0); background-size: 28px 28px;"
       />
       <div class="relative flex items-center gap-3">
-        <div class="flex size-9 items-center justify-center rounded-lg bg-primary font-mono-data text-base font-bold">
-          N
-        </div>
+        <img src="/favicon.svg" alt="NextProject" class="size-9 rounded-lg" />
         <span class="text-lg font-semibold tracking-tight">NextProject</span>
       </div>
 
@@ -87,12 +85,13 @@ const login = async () => {
           驱动 AI 写代码、<br />运行、部署与回滚。
         </p>
         <p class="text-sm leading-relaxed text-zinc-400">
-          一个控制台管理站点、任务、Codex/Claude/Gemini 编码任务，以及 Git 检查点回滚。从需求到上线，全程可观测。
+          一个控制台管理站点、任务与多种 AI 编程工具，以及 Git 检查点回滚。从需求到上线，全程可观测。
         </p>
         <div class="flex items-center gap-6 pt-2 font-mono-data text-xs text-zinc-500">
           <span><span class="text-zinc-200">Codex</span></span>
-          <span><span class="text-zinc-200">Claude Code</span></span>
-          <span><span class="text-zinc-200">Gemini</span></span>
+          <span><span class="text-zinc-200">CodeBuddy</span></span>
+          <span><span class="text-zinc-200">OpenCode</span></span>
+          <span><span class="text-zinc-200">Kimi Code</span></span>
         </div>
       </div>
 
@@ -106,9 +105,7 @@ const login = async () => {
       <div class="w-full max-w-sm">
         <!-- Mobile brand -->
         <div class="mb-8 flex items-center gap-3 lg:hidden">
-          <div class="flex size-9 items-center justify-center rounded-lg bg-primary font-mono-data text-base font-bold text-primary-foreground">
-            N
-          </div>
+          <img src="/favicon.svg" alt="NextProject" class="size-9 rounded-lg" />
           <span class="text-lg font-semibold tracking-tight">NextProject</span>
         </div>
 

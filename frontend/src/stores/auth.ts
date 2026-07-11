@@ -53,8 +53,7 @@ export const useAuthStore = defineStore('auth', {
       this.user = this.normalizeUser(response)
     },
 
-    // 登出
-    logout() {
+    clearSession() {
       this.token = null
       this.refreshToken = null
       this.user = null
@@ -63,19 +62,34 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('refresh_token')
     },
 
+    // 登出
+    async logout() {
+      const refreshToken = this.refreshToken
+      this.clearSession()
+      if (refreshToken) {
+        try {
+          await authAPI.logout(refreshToken)
+        } catch {
+          // Local credentials are already cleared; server session will expire by TTL.
+        }
+      }
+    },
+
     // 刷新 Token
     async refresh() {
       if (!this.refreshToken) {
-        this.logout()
-        return
+        this.clearSession()
+        return null
       }
 
       try {
         const response = await authAPI.refreshToken(this.refreshToken)
         this.token = response.access_token
         localStorage.setItem('access_token', response.access_token)
-      } catch (error) {
-        this.logout()
+        return response.access_token as string
+      } catch {
+        this.clearSession()
+        return null
       }
     },
   },

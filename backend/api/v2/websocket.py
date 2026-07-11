@@ -7,6 +7,10 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy import select
 
 from backend.core.database import AsyncSessionLocal
+from backend.core.task_stream_ticket import (
+    TaskStreamTicketStoreUnavailable,
+    task_stream_ticket_store,
+)
 from backend.models import Task, TaskLog
 from backend.services.websocket_service import websocket_manager
 
@@ -17,8 +21,23 @@ router = APIRouter()
 async def task_logs_websocket(
     websocket: WebSocket,
     task_id: str,
+    ticket: str = Query("", description="One-time task stream ticket"),
     after_id: int = Query(0, description="Only return logs after this ID"),
 ) -> None:
+    try:
+        ticket_payload = await task_stream_ticket_store.consume(ticket=ticket, task_id=task_id)
+    except TaskStreamTicketStoreUnavailable:
+        await websocket.close(code=1013, reason="Task stream authentication is unavailable")
+        return
+    if ticket_payload is None:
+        await websocket.close(code=4401, reason="Invalid or expired task stream ticket")
+        return
+
+    async with AsyncSessionLocal() as db:
+        if await db.get(Task, task_id) is None:
+            await websocket.close(code=4404, reason="Task not found")
+            return
+
     await websocket_manager.connect(task_id, websocket)
     try:
         # 1. Send initial task status

@@ -46,6 +46,12 @@ async def refresh_token(
     return await auth_service.refresh_access_token(db, refresh_token)
 
 
+@router.post("/logout")
+async def logout(payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
+    token = (payload.get("refresh_token") or payload.get("access_token") or "").strip()
+    return await auth_service.logout(token)
+
+
 @router.get("/me")
 async def me(current_user: object = Depends(get_current_user)) -> dict[str, Any]:
     return {"ok": True, "user": auth_service.serialize_user(current_user)}

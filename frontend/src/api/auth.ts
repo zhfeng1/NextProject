@@ -35,6 +35,10 @@ export const authAPI = {
     return client.post('/auth/refresh', { refresh_token: refreshToken })
   },
 
+  logout(refreshToken: string) {
+    return client.post('/auth/logout', { refresh_token: refreshToken })
+  },
+
   updateProfile(data: { name?: string; avatar_url?: string }) {
     return client.put('/auth/me', data)
   },

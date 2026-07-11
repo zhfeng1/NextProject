@@ -77,9 +77,7 @@ const register = async () => {
         style="background-image: radial-gradient(circle at 1px 1px, white 1px, transparent 0); background-size: 28px 28px;"
       />
       <div class="relative flex items-center gap-3">
-        <div class="flex size-9 items-center justify-center rounded-lg bg-primary font-mono-data text-base font-bold">
-          N
-        </div>
+        <img src="/favicon.svg" alt="NextProject" class="size-9 rounded-lg" />
         <span class="text-lg font-semibold tracking-tight">NextProject</span>
       </div>
 
@@ -101,9 +99,7 @@ const register = async () => {
     <div class="flex items-center justify-center bg-muted/30 p-6">
       <div class="w-full max-w-sm">
         <div class="mb-8 flex items-center gap-3 lg:hidden">
-          <div class="flex size-9 items-center justify-center rounded-lg bg-primary font-mono-data text-base font-bold text-primary-foreground">
-            N
-          </div>
+          <img src="/favicon.svg" alt="NextProject" class="size-9 rounded-lg" />
           <span class="text-lg font-semibold tracking-tight">NextProject</span>
         </div>
 
