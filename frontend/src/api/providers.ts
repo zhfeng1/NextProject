@@ -1,5 +1,7 @@
 import client from './client'
 
+export type ApiFormat = 'responses' | 'messages' | 'chat_completions'
+
 export interface LLMProvider {
   id: string
   user_id: string
@@ -9,8 +11,9 @@ export interface LLMProvider {
   base_url: string
   api_key: string
   models: string[]
-  format: 'responses' | 'messages'
-  formats: Array<'responses' | 'messages'>
+  format: ApiFormat
+  formats: ApiFormat[]
+  enabled_formats: ApiFormat[]
   is_default: boolean
   created_at: string | null
   updated_at: string | null
@@ -39,7 +42,7 @@ export const providersAPI = {
     return client.post<any, { ok: boolean; models: string[]; error?: string }>('/providers/fetch-models', data)
   },
 
-  verifyModel(data: { provider_id: string; model: string; format?: 'responses' | 'messages'; api_key?: string }) {
+  verifyModel(data: { provider_id: string; model: string; format?: ApiFormat; api_key?: string }) {
     return client.post<any, { ok: boolean; message?: string; error?: string }>('/providers/verify-model', data)
   },
 }

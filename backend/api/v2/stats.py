@@ -12,6 +12,7 @@ from backend.api.deps import get_current_user
 from backend.core.database import get_db
 from backend.models import Site, SiteStatus, Task
 from backend.services.project_service import project_service
+from backend.services.programming_tool_service import VISIBLE_TOOL_ORDER
 from backend.services.site_service import site_service
 
 router = APIRouter()
@@ -99,7 +100,7 @@ async def get_overview_stats(
             "site_id": site_public_map.get(str(task.site_id), str(task.site_id)),
             "project_id": str(getattr(task, "project_id", "") or ""),
             "title": getattr(task, "title", "") or task.task_type,
-            "provider": task.provider or "system",
+            "provider": "programming_tool" if task.provider == "claude_code" else (task.provider or "system"),
             "task_type": task.task_type,
             "status": task.status,
             "created_at": task.created_at.isoformat() if task.created_at else None,
@@ -144,9 +145,8 @@ async def get_overview_stats(
             "success_rate": success_rate,
         },
         "providers": {
-            "codex": provider_counter.get("codex", 0),
-            "claude_code": provider_counter.get("claude_code", 0),
-            "gemini_cli": provider_counter.get("gemini_cli", 0),
+            tool_id: provider_counter.get(tool_id, 0)
+            for tool_id in VISIBLE_TOOL_ORDER
         },
         "tokens": {
             "tracked": tracked_tasks > 0,

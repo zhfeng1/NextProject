@@ -14,10 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_user, get_db
 from backend.core.encryption import decrypt_api_key, encrypt_api_key, is_masked, mask_api_key
 from backend.models.user_llm_provider import UserLLMProvider
+from backend.services.programming_tool_service import SUPPORTED_FORMATS, programming_tool_service
 from backend.services.project_service import project_service
 
 router = APIRouter(prefix="/providers")
-SUPPORTED_FORMATS = {"responses", "messages"}
+SUPPORTED_FORMATS_SET = set(SUPPORTED_FORMATS)
 
 # ---------------------------------------------------------------------------
 # SSRF protection: block requests to internal / private networks
@@ -59,6 +60,7 @@ def _validate_url_ssrf(url: str) -> None:
 
 def _serialize(p: UserLLMProvider) -> dict[str, Any]:
     formats = _provider_formats(p)
+    enabled_formats = _provider_enabled_formats(p)
     return {
         "id": str(p.id),
         "user_id": str(p.user_id),
@@ -70,6 +72,7 @@ def _serialize(p: UserLLMProvider) -> dict[str, Any]:
         "models": p.models or [],
         "format": formats[0],
         "formats": formats,
+        "enabled_formats": enabled_formats,
         "is_default": bool(p.is_default),
         "created_at": p.created_at.isoformat() if p.created_at else None,
         "updated_at": p.updated_at.isoformat() if p.updated_at else None,
@@ -77,16 +80,11 @@ def _serialize(p: UserLLMProvider) -> dict[str, Any]:
 
 
 def _provider_formats(provider: UserLLMProvider) -> list[str]:
-    raw = getattr(provider, "formats_json", None) or []
-    if isinstance(raw, str):
-        raw = [raw]
-    formats = [str(item).strip() for item in raw if str(item).strip() in SUPPORTED_FORMATS]
-    legacy = str(getattr(provider, "format", "") or "").strip()
-    if legacy in SUPPORTED_FORMATS and legacy not in formats:
-        formats.insert(0, legacy)
-    if not formats:
-        formats = ["responses"]
-    return list(dict.fromkeys(formats))
+    return programming_tool_service.provider_formats(provider)
+
+
+def _provider_enabled_formats(provider: UserLLMProvider) -> list[str]:
+    return programming_tool_service.provider_enabled_formats(provider)
 
 
 def _normalize_formats(payload: dict[str, Any], existing: UserLLMProvider | None = None) -> list[str]:
@@ -99,11 +97,72 @@ def _normalize_formats(payload: dict[str, Any], existing: UserLLMProvider | None
         raw = ["responses"]
     if isinstance(raw, str):
         raw = [raw]
-    formats = [str(item).strip() for item in raw if str(item).strip() in SUPPORTED_FORMATS]
+    requested = [str(item).strip() for item in raw if str(item).strip()]
+    if any(fmt not in SUPPORTED_FORMATS_SET for fmt in requested):
+        raise HTTPException(
+            status_code=400,
+            detail="formats only supports responses, messages, or chat_completions",
+        )
+    formats = requested
     formats = list(dict.fromkeys(formats))
     if not formats:
-        raise HTTPException(status_code=400, detail="formats must include responses or messages")
+        raise HTTPException(
+            status_code=400,
+            detail="formats must include responses, messages, or chat_completions",
+        )
     return formats
+
+
+def _normalize_enabled_formats(
+    payload: dict[str, Any],
+    formats: list[str],
+    *,
+    existing: UserLLMProvider | None = None,
+) -> list[str]:
+    if "enabled_formats" in payload:
+        raw = payload.get("enabled_formats")
+    elif existing is not None:
+        raw = [fmt for fmt in _provider_enabled_formats(existing) if fmt in formats]
+    else:
+        # Backwards compatibility: older clients only send formats. A newly
+        # created provider remains immediately usable for those formats.
+        raw = formats
+    if raw is None:
+        raw = []
+    if isinstance(raw, str):
+        raw = [raw]
+    enabled = list(dict.fromkeys(str(item).strip() for item in raw if str(item).strip()))
+    invalid = [fmt for fmt in enabled if fmt not in formats or fmt not in SUPPORTED_FORMATS_SET]
+    if invalid:
+        raise HTTPException(status_code=400, detail="enabled_formats must be a subset of formats")
+    return enabled
+
+
+async def _claim_enabled_formats(
+    db: AsyncSession,
+    provider: UserLLMProvider,
+    enabled_formats: list[str],
+) -> None:
+    """Make each enabled format unique inside a user/scope/project."""
+    provider.enabled_formats_json = enabled_formats
+    if not enabled_formats:
+        return
+    query = select(UserLLMProvider).where(
+        UserLLMProvider.user_id == str(provider.user_id),
+        UserLLMProvider.scope_type == provider.scope_type,
+        UserLLMProvider.id != str(provider.id),
+    )
+    if provider.scope_type == "project":
+        query = query.where(UserLLMProvider.project_id == provider.project_id)
+    else:
+        query = query.where(UserLLMProvider.project_id.is_(None))
+    rows = await db.execute(query.with_for_update())
+    claimed = set(enabled_formats)
+    for other in rows.scalars().all():
+        current = _provider_enabled_formats(other)
+        remaining = [fmt for fmt in current if fmt not in claimed]
+        if remaining != current:
+            other.enabled_formats_json = remaining
 
 
 async def _normalize_scope(
@@ -161,6 +220,7 @@ async def create_provider(
     user_id = str(getattr(current_user, "id"))
     scope_type, project_id = await _normalize_scope(db, current_user, payload)
     formats = _normalize_formats(payload)
+    enabled_formats = _normalize_enabled_formats(payload, formats)
     p = UserLLMProvider(
         id=str(uuid.uuid4()),
         user_id=user_id,
@@ -172,9 +232,12 @@ async def create_provider(
         models=payload.get("models") or [],
         format=formats[0],
         formats_json=formats,
+        enabled_formats_json=enabled_formats,
         is_default=bool(payload.get("is_default", False)),
     )
     db.add(p)
+    await db.flush()
+    await _claim_enabled_formats(db, p, enabled_formats)
     await db.commit()
     await db.refresh(p)
     return {"ok": True, "provider": _serialize(p)}
@@ -193,14 +256,15 @@ async def update_provider(
         raise HTTPException(status_code=404, detail="Provider 未找到")
     if "scope_type" in payload or "project_id" in payload:
         p.scope_type, p.project_id = await _normalize_scope(db, current_user, payload, existing=p)
-    allowed = {"name", "base_url", "api_key", "models", "format", "formats", "is_default"}
+    formats = _normalize_formats(payload, existing=p)
+    enabled_formats = _normalize_enabled_formats(payload, formats, existing=p)
+    enabled_formats = [fmt for fmt in enabled_formats if fmt in formats]
+    if "format" in payload or "formats" in payload:
+        p.format = formats[0]
+        p.formats_json = formats
+    allowed = {"name", "base_url", "api_key", "models", "is_default"}
     for key, value in payload.items():
         if key not in allowed:
-            continue
-        if key in {"format", "formats"}:
-            formats = _normalize_formats(payload, existing=p)
-            p.format = formats[0]
-            p.formats_json = formats
             continue
         if key == "api_key":
             raw_key = (value or "").strip()
@@ -209,6 +273,7 @@ async def update_provider(
             setattr(p, key, encrypt_api_key(raw_key))
         else:
             setattr(p, key, value)
+    await _claim_enabled_formats(db, p, enabled_formats)
     await db.commit()
     await db.refresh(p)
     return {"ok": True, "provider": _serialize(p)}

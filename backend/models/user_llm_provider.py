@@ -20,4 +20,5 @@ class UserLLMProvider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     models: Mapped[dict | list] = mapped_column(JSON, nullable=False, default=list)
     format: Mapped[str] = mapped_column(String(20), nullable=False, default="responses")
     formats_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    enabled_formats_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)

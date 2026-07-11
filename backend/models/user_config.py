@@ -19,4 +19,3 @@ class UserConfig(TimestampMixin, Base):
     codex_access_token: Mapped[str] = mapped_column(Text, default="")
     codex_mcp_url: Mapped[str] = mapped_column(String(255), default="")
     claude_api_key: Mapped[str] = mapped_column(Text, default="")
-    gemini_api_key: Mapped[str] = mapped_column(Text, default="")

@@ -125,10 +125,12 @@ async def test_skill_scope_import_and_site_resolution(
 async def test_project_task_creates_one_board_item_for_multiple_repos(
     client: httpx.AsyncClient,
     auth_headers: dict[str, str],
+    codex_provider,
     app_module,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project, repos = await _create_project_with_repos(client, auth_headers, "Task Board Project")
+    await codex_provider(project["id"])
     monkeypatch.setattr(app_module.task_service, "enqueue_task", lambda task: None)
 
     create_response = await client.post(
