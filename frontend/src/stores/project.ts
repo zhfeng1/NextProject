@@ -37,7 +37,7 @@ export const useProjectStore = defineStore('project', {
       }
     },
 
-    async createProject(data: { name: string; description?: string }) {
+    async createProject(data: { name: string; description?: string; create_default_repo?: boolean; default_repo_name?: string; starter?: 'python-vue' }) {
       const response = await projectsAPI.create(data)
       this.projects.unshift(response.project)
       return response.project
@@ -48,7 +48,7 @@ export const useProjectStore = defineStore('project', {
       this.projects = this.projects.filter((p) => p.id !== projectId)
     },
 
-    async addRepo(projectId: string, data: { name: string; git_url?: string; git_branch?: string; git_username?: string; git_password?: string }) {
+    async addRepo(projectId: string, data: { name: string; git_url?: string; git_branch?: string; git_username?: string; git_password?: string; starter?: 'python-vue' | 'empty'; start_command?: string }) {
       const response = await projectsAPI.addRepo(projectId, data)
       if (this.currentProject?.id === projectId) {
         await this.fetchProject(projectId)

@@ -16,6 +16,7 @@ export interface Site {
   internal_url?: string
   config?: Record<string, unknown>
   project_id?: string
+  main_branch?: string
   created_at: string
 }
 
@@ -46,6 +47,9 @@ export interface Project {
 export interface ProjectCreateRequest {
   name: string
   description?: string
+  create_default_repo?: boolean
+  default_repo_name?: string
+  starter?: 'python-vue'
 }
 
 export interface RepoAddRequest {
@@ -54,6 +58,8 @@ export interface RepoAddRequest {
   git_branch?: string
   git_username?: string
   git_password?: string
+  starter?: 'python-vue' | 'empty'
+  start_command?: string
 }
 
 export interface Template {

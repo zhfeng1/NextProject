@@ -5,12 +5,23 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.deps import get_current_user, get_db
+from backend.api.deps import get_current_user, get_db, require_role
+from backend.services.git_history_service import git_history_service
 from backend.services.project_service import project_service
 from backend.services.site_service import site_service
 from backend.services.task_service import task_service
 
 router = APIRouter(prefix="/projects")
+
+
+def _payload_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() not in {"0", "false", "no", "off"}
+    return bool(value)
 
 
 @router.get("")
@@ -36,8 +47,17 @@ async def create_project(
     if not name:
         return {"ok": False, "error": "name is required"}
     description = (payload.get("description") or "").strip()
-    project = await project_service.create_project(db, current_user, name, description)
-    return {"ok": True, "project": project_service.serialize_project(project, [])}
+    project = await project_service.create_project(
+        db,
+        current_user,
+        name,
+        description,
+        create_default_repo=_payload_bool(payload.get("create_default_repo"), default=True),
+        default_repo_name=(payload.get("default_repo_name") or "app").strip(),
+        starter=(payload.get("starter") or "python-vue").strip(),
+    )
+    repos = await project_service.get_project_repos(db, str(project.id))
+    return {"ok": True, "project": project_service.serialize_project(project, repos)}
 
 
 @router.get("/{project_id}")
@@ -105,6 +125,8 @@ async def add_repo(
         git_branch=(payload.get("git_branch") or "").strip() or None,
         git_username=(payload.get("git_username") or "").strip() or None,
         git_password=(payload.get("git_password") or "").strip() or None,
+        starter=(payload.get("starter") or "python-vue").strip(),
+        start_command=(payload.get("start_command") or "").strip() or None,
     )
     return {"ok": True, "repo": site_service.serialize_site(site)}
 
@@ -118,6 +140,69 @@ async def delete_repo(
 ) -> dict[str, Any]:
     await project_service.delete_repo(db, project_id, repo_id, current_user)
     return {"ok": True}
+
+
+@router.put("/{project_id}/repos/{repo_id}/main-branch")
+async def update_repo_main_branch(
+    project_id: str,
+    repo_id: str,
+    payload: dict[str, Any] = Body(default_factory=dict),
+    current_user: object = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    site = await project_service.update_repo_main_branch(
+        db,
+        project_id,
+        repo_id,
+        current_user,
+        main_branch=str(payload.get("main_branch") or ""),
+    )
+    return {"ok": True, "repo": site_service.serialize_site(site)}
+
+
+@router.get("/{project_id}/repos/{repo_id}/git/graph")
+async def get_repo_git_graph(
+    project_id: str,
+    repo_id: str,
+    branch: str = Query(default="", max_length=255),
+    limit: int = Query(default=200, ge=1, le=500),
+    skip: int = Query(default=0, ge=0),
+    current_user: object = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    graph = await project_service.get_repo_git_graph(
+        db,
+        project_id,
+        repo_id,
+        current_user,
+        branch=branch,
+        limit=limit,
+        skip=skip,
+    )
+    return {"ok": True, "graph": graph}
+
+
+@router.post("/{project_id}/repos/{repo_id}/git/rollback")
+async def rollback_repo_commit(
+    project_id: str,
+    repo_id: str,
+    payload: dict[str, Any] = Body(default_factory=dict),
+    current_user: object = Depends(require_role("developer")),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    operation, graph = await project_service.rollback_repo_to_commit(
+        db,
+        project_id,
+        repo_id,
+        current_user,
+        commit_sha=str(payload.get("commit_sha") or "").strip(),
+        branch=str(payload.get("branch") or "").strip(),
+    )
+    return {
+        "ok": True,
+        "operation": git_history_service.serialize_operation(operation),
+        "graph": graph,
+    }
 
 
 @router.get("/{project_id}/repos/{repo_id}/files")

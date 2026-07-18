@@ -35,6 +35,13 @@ export const projectsAPI = {
     return client.delete<any, { ok: boolean }>(`/projects/${projectId}/repos/${repoId}`)
   },
 
+  updateRepoMainBranch(projectId: string, repoId: string, mainBranch: string) {
+    return client.put<any, { ok: boolean; repo: Site }>(
+      `/projects/${projectId}/repos/${repoId}/main-branch`,
+      { main_branch: mainBranch },
+    )
+  },
+
   listRepoFiles(projectId: string, repoId: string, path = '') {
     return client.get<any, {
       ok: boolean
