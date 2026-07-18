@@ -14,6 +14,7 @@ from backend.models.user_llm_provider import UserLLMProvider
 from backend.models.version import SiteVersion
 from backend.models.conversation import Conversation, ConversationMessage
 from backend.models.requirement import SiteRequirementEvent, SiteRequirementSnapshot
+from backend.models.repo_git_operation import RepoGitOperation
 
 Task = AgentTask
 TaskLog = AgentTaskLog
@@ -30,6 +31,7 @@ __all__ = [
     "OrganizationMember",
     "PlanTier",
     "Project",
+    "RepoGitOperation",
     "Site",
     "SiteDeployConfig",
     "SiteProviderConfig",

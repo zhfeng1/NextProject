@@ -16,7 +16,12 @@ def develop_code_task(self, task_id: str) -> dict[str, object]:
             task = await db.get(Task, task_id)
             if task is None:
                 raise ValueError(f"Task not found: {task_id}")
-            lock_id = f"project:{task.project_id}" if getattr(task, "project_id", None) else f"site:{task.site_id}"
+            payload = getattr(task, "payload_json", None) or {}
+            conversation_id = str(payload.get("conversation_id") or "").strip()
+            if conversation_id and not payload.get("completion_mode"):
+                lock_id = f"conversation:{conversation_id}"
+            else:
+                lock_id = f"project:{task.project_id}" if getattr(task, "project_id", None) else f"site:{task.site_id}"
 
         # Acquire target-level lock outside the DB session.
         if not acquire_site_lock(lock_id, task_id):

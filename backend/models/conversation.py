@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.base import Base
@@ -14,8 +14,23 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "conversations"
 
     site_id: Mapped[str] = mapped_column(ForeignKey("sites.id"), nullable=False, index=True)
+    project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    scope_type: Mapped[str] = mapped_column(String(16), default="site", nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(255), default="新会话")
+    repo_ids_json: Mapped[list] = mapped_column(JSON, default=list)
+    provider: Mapped[str] = mapped_column(String(32), default="codex")
+    provider_session_id: Mapped[str] = mapped_column(String(255), default="")
+    branch_name: Mapped[str] = mapped_column(String(255), default="")
+    worktree_root: Mapped[str] = mapped_column(String(512), default="")
+    git_repos_json: Mapped[list] = mapped_column(JSON, default=list)
+    diff_snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    completion_status: Mapped[str] = mapped_column(String(20), default="active")
+    completion_task_id: Mapped[str] = mapped_column(String(36), default="")
+    completion_error: Mapped[str] = mapped_column(Text, default="")
+    cleanup_status: Mapped[str] = mapped_column(String(20), default="retained")
+    cleanup_error: Mapped[str] = mapped_column(Text, default="")
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     status: Mapped[str] = mapped_column(String(20), default="active")  # active | archived
     summary_text: Mapped[str] = mapped_column(Text, default="")
     message_count: Mapped[int] = mapped_column(Integer, default=0)

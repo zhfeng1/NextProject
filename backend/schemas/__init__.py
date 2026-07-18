@@ -9,7 +9,7 @@ from backend.schemas.site import (
 )
 from backend.schemas.task import TaskCreateRequest, TaskLogResponse, TaskResponse
 from backend.schemas.template import TemplateCreateSiteRequest, TemplateResponse
-from backend.schemas.version import VersionCreateRequest, VersionResponse
+from backend.schemas.version import VersionResponse, VersionRollbackRequest, VersionSnapshotRequest
 
 __all__ = [
     "AppConfigPayload",
@@ -30,7 +30,7 @@ __all__ = [
     "UserLoginRequest",
     "UserRegisterRequest",
     "UserResponse",
-    "VersionCreateRequest",
     "VersionResponse",
+    "VersionRollbackRequest",
+    "VersionSnapshotRequest",
 ]
-

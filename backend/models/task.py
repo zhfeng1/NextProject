@@ -22,6 +22,11 @@ class AgentTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     site_id: Mapped[str | None] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=True, index=True)
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
+    conversation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(255), default="")
     description: Mapped[str] = mapped_column(Text, default="")
     priority: Mapped[str] = mapped_column(String(16), default="medium")
