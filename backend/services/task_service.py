@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import shlex
 import shutil
 import stat
@@ -14,20 +15,26 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+import httpx
 from fastapi import HTTPException
-from sqlalchemy import case, desc, or_, select
+from sqlalchemy import case, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.models import Project, Site, Task, TaskLog, TaskRepository, TaskStatus
+from backend.models import Conversation, Project, Site, Task, TaskLog, TaskRepository, TaskStatus
+from backend.models.user_llm_provider import UserLLMProvider
 from backend.core.encryption import decrypt_api_key
+from backend.services.execution_trace_service import read_execution_trace, redact_execution_text
 from backend.services.mcp_service import mcp_service
+from backend.services.conversation_git_service import conversation_git_service
 from backend.services.project_service import project_service
+from backend.services.programming_tool_service import SUPPORTED_TOOL_IDS, programming_tool_service
 from backend.services.site_service import site_service
 from backend.services.skill_service import skill_service
 from backend.services.websocket_service import websocket_manager
 
-SUPPORTED_PROVIDERS = {"codex", "claude_code", "gemini_cli"}
+SUPPORTED_PROVIDERS = set(SUPPORTED_TOOL_IDS)
 SUPPORTED_TASK_TYPES = {"develop_code", "test_local_playwright", "deploy_local", "deploy_apollo", "clone_repo"}
+DEFAULT_STACK_PROMPT = "[项目约定]\n默认后端: Python\n默认前端: Vue\n除非本次需求明确说明，否则按以上技术栈进行修改与新增。"
 BOARD_STATUSES = {"todo", "queued", "running", "review", "done", "failed", "canceled"}
 EXEC_TO_BOARD_STATUS = {
     TaskStatus.QUEUED.value: "queued",
@@ -44,9 +51,81 @@ WORKFLOW_STAGE_LABELS = {
     "optimize": "优化",
     "review": "评审",
 }
+ADAPTER_URLS = {
+    tool_id: spec.adapter_url
+    for tool_id in SUPPORTED_PROVIDERS
+    if (spec := programming_tool_service.get_spec(tool_id)) is not None
+}
+PROVIDER_OUTPUT_BLOCK_SEPARATOR = "\n\x1e\n"
 
 
 class TaskService:
+    @staticmethod
+    def _llm_provider_formats(provider: UserLLMProvider) -> list[str]:
+        raw_formats = getattr(provider, "formats_json", None) or []
+        if isinstance(raw_formats, str):
+            raw_formats = [raw_formats]
+        formats = [str(item).strip() for item in raw_formats if str(item).strip()]
+        legacy_format = str(getattr(provider, "format", "") or "").strip()
+        if legacy_format and legacy_format not in formats:
+            formats.insert(0, legacy_format)
+        return formats
+
+    async def resolve_configured_llm_provider(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: str,
+        provider: str,
+        project_id: str | None = None,
+    ) -> UserLLMProvider | None:
+        if not project_id:
+            return None
+        resolved = await programming_tool_service.resolve_project_provider(
+            db,
+            user_id=str(user_id),
+            project_id=str(project_id),
+            tool_id=provider,
+        )
+        return resolved[0] if resolved else None
+
+    async def resolve_configured_tool_provider(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: str,
+        provider: str,
+        project_id: str | None,
+    ) -> tuple[UserLLMProvider, str] | None:
+        if not project_id:
+            return None
+        return await programming_tool_service.resolve_project_provider(
+            db,
+            user_id=str(user_id),
+            project_id=str(project_id),
+            tool_id=provider,
+        )
+
+    async def require_configured_provider(
+        self,
+        db: AsyncSession,
+        *,
+        current_user: object,
+        provider: str,
+        project_id: str | None = None,
+    ) -> UserLLMProvider:
+        if provider not in SUPPORTED_PROVIDERS:
+            raise HTTPException(status_code=400, detail=f"不支持的编程工具: {provider}")
+        if not project_id:
+            raise HTTPException(status_code=400, detail="编程任务必须属于已配置模型 Provider 的项目")
+        configured, _format = await programming_tool_service.require_project_provider(
+            db,
+            user_id=str(getattr(current_user, "id")),
+            project_id=str(project_id),
+            tool_id=provider,
+        )
+        return configured
+
     @staticmethod
     def _normalize_context_url(current_url: str, site: Site | None) -> str:
         raw = (current_url or "").strip()
@@ -88,6 +167,16 @@ class TaskService:
         if text.lstrip().startswith("["):
             return text
         return f"[{source}] {text}"
+
+    @staticmethod
+    def _provider_label(provider: str) -> str:
+        return {
+            "codex": "Codex",
+            "claude_code": "编程工具",
+            "codebuddy": "CodeBuddy",
+            "opencode": "OpenCode",
+            "kimi_code": "Kimi Code",
+        }.get(provider, "编程工具" if provider else "System")
 
     @staticmethod
     def _owner_ref(site: Site) -> object:
@@ -132,7 +221,7 @@ class TaskService:
             return f"执行命令: $ {preview}"
         if provider == "codex":
             model_part = f" --model {model_name}" if model_name else ""
-            return f"执行命令: $ codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox{model_part} [prompt hidden]"
+            return f"执行命令: $ codex exec --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox{model_part} [prompt hidden]"
         return f"{provider} 任务已启动"
 
     @staticmethod
@@ -149,7 +238,201 @@ class TaskService:
     def _provider_output_path(task: Task, provider: str = "") -> Path:
         provider_name = (provider or getattr(task, "provider", "") or "provider").strip() or "provider"
         artifacts_root = TaskService._task_artifacts_root()
-        return artifacts_root / str(task.id) / f"{provider_name}-output.log"
+        return artifacts_root / str(task.id) / f"{provider_name}-user-output.log"
+
+    @staticmethod
+    def _provider_raw_output_path(task: Task, provider: str = "") -> Path:
+        provider_name = (provider or getattr(task, "provider", "") or "provider").strip() or "provider"
+        artifacts_root = TaskService._task_artifacts_root()
+        return artifacts_root / str(task.id) / f"{provider_name}-raw-output.log"
+
+    @staticmethod
+    def _execution_trace_path(task: Task, provider: str = "") -> Path:
+        provider_name = (provider or getattr(task, "provider", "") or "provider").strip() or "provider"
+        artifacts_root = TaskService._task_artifacts_root()
+        return artifacts_root / str(task.id) / f"{provider_name}-execution-trace.ndjson"
+
+    @staticmethod
+    def _strip_code_blocks(text: str) -> str:
+        cleaned = re.sub(r"```[^\n]*\n.*?(?:```|$)", "", text, flags=re.DOTALL)
+        cleaned = re.sub(r"~~~[^\n]*\n.*?(?:~~~|$)", "", cleaned, flags=re.DOTALL)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        return cleaned.strip()
+
+    @classmethod
+    def _extract_codex_user_message(cls, line: str) -> str:
+        try:
+            event = json.loads(line)
+        except (json.JSONDecodeError, TypeError):
+            return ""
+        if event.get("type") != "item.completed":
+            return ""
+        item = event.get("item") or {}
+        if item.get("type") != "agent_message":
+            return ""
+        text = str(item.get("text") or "").strip()
+        if not text:
+            return ""
+        return cls._strip_code_blocks(text)
+
+    @classmethod
+    def _recover_codex_output_blocks(cls, raw_path: Path, max_read_bytes: int = 8_000_000) -> str:
+        if not raw_path.exists() or not raw_path.is_file():
+            return ""
+        with raw_path.open("rb") as fp:
+            size = raw_path.stat().st_size
+            if size > max_read_bytes:
+                fp.seek(-max_read_bytes, os.SEEK_END)
+                fp.readline()
+            raw_text = fp.read().decode("utf-8", errors="ignore")
+        blocks = [
+            message
+            for line in raw_text.splitlines()
+            if (message := cls._extract_codex_user_message(line))
+        ]
+        return PROVIDER_OUTPUT_BLOCK_SEPARATOR.join(blocks)
+
+    @staticmethod
+    def _adapter_headers() -> dict[str, str]:
+        token = (
+            os.getenv("PROGRAMMING_TOOL_ADAPTER_TOKEN", "")
+            or os.getenv("PROGRAMMING_ADAPTER_TOKEN", "")
+        ).strip()
+        return {"X-Adapter-Token": token} if token else {}
+
+    async def _cancel_adapter_run(self, provider: str, task_id: str) -> None:
+        adapter_url = ADAPTER_URLS.get(provider)
+        if not adapter_url:
+            return
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                await client.post(
+                    f"{adapter_url}/v1/runs/{task_id}/cancel",
+                    headers=self._adapter_headers(),
+                )
+        except Exception:
+            # Celery termination below remains the final cancellation fallback.
+            pass
+
+    async def _run_adapter_stream(
+        self,
+        db: AsyncSession,
+        task: Task,
+        *,
+        provider: str,
+        request_payload: dict[str, Any],
+        display_path: Path,
+    ) -> tuple[int, str, dict[str, Any]]:
+        adapter_url = ADAPTER_URLS.get(provider)
+        if not adapter_url:
+            raise HTTPException(status_code=400, detail=f"缺少编程工具适配器: {self._provider_label(provider)}")
+
+        display_path.parent.mkdir(parents=True, exist_ok=True)
+        display_path.parent.chmod(0o700)
+        display_path.write_text("", encoding="utf-8")
+        display_path.chmod(0o600)
+        display_parts: list[str] = []
+        usage: dict[str, Any] = {}
+        exit_code: int | None = None
+        diagnostic = ""
+        canceled = False
+        timed_out = False
+        native_session_id = ""
+        timeout = httpx.Timeout(connect=10, read=None, write=30, pool=10)
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream(
+                    "POST",
+                    f"{adapter_url}/v1/runs",
+                    json=request_payload,
+                    headers=self._adapter_headers(),
+                ) as response:
+                    if response.status_code >= 400:
+                        body = (await response.aread()).decode("utf-8", errors="ignore")[:1000]
+                        raise RuntimeError(f"适配器请求失败 ({response.status_code}): {body}")
+                    async for line in response.aiter_lines():
+                        if not line.strip():
+                            continue
+                        try:
+                            event = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        event_type = str(event.get("type") or "")
+                        if event_type == "display_delta":
+                            # Adapters own the stateful code-fence filter because fences
+                            # may be split across multiple streamed events.
+                            content = str(event.get("content") or "")
+                            if not content:
+                                continue
+                            display_parts.append(content)
+                            rendered = "".join(display_parts).strip()
+                            display_path.write_text(rendered + ("\n" if rendered else ""), encoding="utf-8")
+                            raw = rendered.encode("utf-8")
+                            truncated = len(raw) > 512_000
+                            if truncated:
+                                raw = raw[-512_000:]
+                            websocket_manager.publish(str(task.id), {
+                                "type": "provider_output",
+                                "data": {
+                                    "provider": provider,
+                                    "available": True,
+                                    "content": raw.decode("utf-8", errors="ignore"),
+                                    "truncated": truncated,
+                                },
+                            })
+                        elif event_type == "diagnostic":
+                            diagnostic = str(event.get("message") or diagnostic)[:2000]
+                        elif event_type == "usage" and isinstance(event.get("usage"), dict):
+                            usage.update(event["usage"])
+                        elif event_type == "run_finished":
+                            exit_code = int(event.get("exit_code") or 0)
+                            canceled = bool(event.get("canceled", False))
+                            timed_out = bool(event.get("timed_out", False))
+                            if isinstance(event.get("usage"), dict):
+                                usage.update(event["usage"])
+                            diagnostic = str(event.get("error") or diagnostic)[:2000]
+                            native_session_id = str(event.get("native_session_id") or "").strip()
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"编程工具适配器不可用: {exc}") from exc
+
+        if exit_code is None:
+            raise RuntimeError("编程工具适配器流意外结束")
+        return exit_code, "".join(display_parts).strip(), {
+            "usage": usage,
+            "diagnostic": diagnostic,
+            "canceled": canceled,
+            "timed_out": timed_out,
+            "native_session_id": native_session_id,
+        }
+
+    async def _persist_provider_session_id(
+        self,
+        db: AsyncSession,
+        task: Task,
+        native_session_id: str,
+    ) -> str:
+        normalized = str(native_session_id or "").strip()
+        if not normalized:
+            return ""
+        if len(normalized) > 255 or re.fullmatch(r"[A-Za-z0-9._:-]+", normalized) is None:
+            raise RuntimeError("编程工具返回了无效的原生会话 ID")
+        conversation_id = str(getattr(task, "conversation_id", "") or "").strip()
+        if not conversation_id:
+            return normalized
+        conv = await db.get(Conversation, conversation_id)
+        if conv is None:
+            return normalized
+        if str(getattr(conv, "provider", "") or "") != str(getattr(task, "provider", "") or ""):
+            raise RuntimeError("编程工具原生会话与开发会话工具不匹配")
+        existing = str(getattr(conv, "provider_session_id", "") or "").strip()
+        if existing and existing != normalized:
+            raise RuntimeError("编程工具恢复后返回了不同的原生会话 ID")
+        conv.provider_session_id = normalized
+        payload = dict(getattr(task, "payload_json", None) or {})
+        payload["provider_session_id"] = normalized
+        task.payload_json = payload
+        await db.commit()
+        return normalized
 
     @staticmethod
     def _repo_root_for_site(site: Site) -> Path:
@@ -158,7 +441,21 @@ class TaskService:
         return site_service.site_root(site.site_id)
 
     @staticmethod
-    def _project_root_for_task(task: Task, primary_site: Site | None = None) -> Path:
+    def _project_root_for_task(
+        task: Task,
+        primary_site: Site | None = None,
+        task_repos: list[TaskRepository] | None = None,
+    ) -> Path:
+        payload = getattr(task, "payload_json", None) or {}
+        workspace_root = str(payload.get("workspace_root") or "").strip()
+        completion_mode = bool(payload.get("completion_mode"))
+        repositories = list(task_repos or [])
+        if not completion_mode and len(repositories) == 1:
+            repo_path = str(getattr(repositories[0], "repo_path", "") or "").strip()
+            if repo_path:
+                return Path(repo_path)
+        if workspace_root:
+            return Path(workspace_root)
         if getattr(task, "project_id", None):
             return project_service.project_root(str(task.project_id))
         if primary_site is not None:
@@ -226,6 +523,7 @@ class TaskService:
             "id": str(task.id),
             "site_id": str(getattr(task, "site_id", "") or ""),
             "project_id": str(getattr(task, "project_id", "") or ""),
+            "conversation_id": str(getattr(task, "conversation_id", "") or payload.get("conversation_id") or ""),
             "title": getattr(task, "title", "") or payload.get("title") or payload.get("prompt") or getattr(task, "task_type", ""),
             "description": getattr(task, "description", ""),
             "priority": getattr(task, "priority", "") or "medium",
@@ -299,26 +597,103 @@ class TaskService:
     ) -> dict[str, Any]:
         task = await self.get_task(db, task_id, current_user)
         output_path = self._provider_output_path(task)
-        if not output_path.exists():
-            result = getattr(task, "result_json", None) or getattr(task, "result", None) or {}
+        content = output_path.read_text(encoding="utf-8", errors="ignore") if output_path.exists() else ""
+        if task.provider == "codex" and "\x1e" not in content:
+            recovered = self._recover_codex_output_blocks(self._provider_raw_output_path(task))
+            if recovered:
+                content = recovered
+        if not content:
             return {
                 "task_id": str(task.id),
                 "provider": task.provider,
-                "available": bool(result.get("output_tail")),
-                "content": str(result.get("output_tail") or ""),
+                "available": False,
+                "content": "",
                 "truncated": False,
             }
-        raw = output_path.read_bytes()
+        raw = content.encode("utf-8")
         truncated = len(raw) > max_bytes
         if truncated:
             raw = raw[-max_bytes:]
-        content = raw.decode("utf-8", errors="ignore")
         return {
             "task_id": str(task.id),
             "provider": task.provider,
             "available": True,
-            "content": content,
+            "content": raw.decode("utf-8", errors="ignore"),
             "truncated": truncated,
+        }
+
+    async def get_task_execution_details(
+        self,
+        db: AsyncSession,
+        task_id: str,
+        current_user: object,
+        *,
+        after_log_id: int = 0,
+        after_trace_seq: int = 0,
+        limit: int = 200,
+    ) -> dict[str, Any]:
+        task = await self.get_task(db, task_id, current_user)
+        log_rows = await db.execute(
+            select(TaskLog)
+            .where(TaskLog.task_id == task.id, TaskLog.id > after_log_id)
+            .order_by(TaskLog.id.asc())
+            .limit(limit + 1)
+        )
+        backend_logs = list(log_rows.scalars().all())
+        backend_has_more = len(backend_logs) > limit
+        backend_events = [
+            {
+                "source": "backend",
+                "seq": int(item.id),
+                "ts": item.ts.isoformat() if getattr(item, "ts", None) else "",
+                "level": str(item.level or "INFO").upper(),
+                "kind": "task_log",
+                "content": redact_execution_text(item.line),
+            }
+            for item in backend_logs[:limit]
+        ]
+        trace_events, trace_has_more = read_execution_trace(
+            self._execution_trace_path(task),
+            after_seq=after_trace_seq,
+            limit=limit,
+        )
+
+        candidates = sorted(
+            [*backend_events, *trace_events],
+            key=lambda item: (
+                str(item.get("ts") or ""),
+                0 if item.get("source") == "backend" else 1,
+                int(item.get("seq") or 0),
+            ),
+        )
+        events = candidates[:limit]
+        included_backend = [item for item in events if item.get("source") == "backend"]
+        included_trace = [item for item in events if item.get("source") == "adapter"]
+        next_log_id = max(
+            [after_log_id, *[int(item.get("seq") or 0) for item in included_backend]]
+        )
+        next_trace_seq = max(
+            [after_trace_seq, *[int(item.get("seq") or 0) for item in included_trace]]
+        )
+        has_more = (
+            backend_has_more
+            or trace_has_more
+            or len(candidates) > len(events)
+        )
+        status_value = getattr(task.status, "value", task.status)
+        terminal = status_value in {
+            TaskStatus.SUCCESS.value,
+            TaskStatus.FAILED.value,
+            TaskStatus.CANCELED.value,
+        }
+        return {
+            "task_id": str(task.id),
+            "events": events,
+            "next_after_log_id": next_log_id,
+            "next_after_trace_seq": next_trace_seq,
+            "has_more": has_more,
+            "complete": bool(terminal and not has_more),
+            "redacted": True,
         }
 
     async def list_site_tasks(
@@ -453,13 +828,21 @@ class TaskService:
         if normalized_task_type not in SUPPORTED_TASK_TYPES:
             raise HTTPException(status_code=400, detail=f"Unsupported task_type: {task_type}")
         if normalized_task_type == "develop_code" and normalized_provider not in SUPPORTED_PROVIDERS:
-            raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider}")
+            raise HTTPException(status_code=400, detail=f"不支持的编程工具: {provider}")
+        if normalized_task_type == "develop_code":
+            await self.require_configured_provider(
+                db,
+                current_user=current_user,
+                provider=normalized_provider,
+                project_id=str(site.project_id) if site.project_id else None,
+            )
         # Security: strip user-supplied 'command' to prevent arbitrary command execution
         payload_data.pop("command", None)
         task = Task(
             id=str(uuid.uuid4()),
             site_id=site.id,
             project_id=str(site.project_id) if site.project_id else None,
+            conversation_id=str(payload_data.get("conversation_id") or "") or None,
             title=str(payload_data.get("title") or payload_data.get("prompt") or normalized_task_type)[:255],
             description=str(payload_data.get("description") or payload_data.get("prompt") or ""),
             priority=str(payload_data.get("priority") or "medium"),
@@ -501,18 +884,34 @@ class TaskService:
             if str(site.project_id) != str(project.id):
                 raise HTTPException(status_code=404, detail=f"Repo not found in project: {repo_id}")
             sites.append(site)
+        conversation_id = str(payload_data.get("conversation_id") or "").strip()
+        completion_mode = bool(payload_data.get("completion_mode"))
+        conversation = await db.get(Conversation, conversation_id) if conversation_id else None
+        if conversation_id:
+            if conversation is None or str(conversation.project_id or "") != str(project.id):
+                raise HTTPException(status_code=404, detail="Conversation not found in project")
+            conversation_repo_ids = list(getattr(conversation, "repo_ids_json", None) or [])
+            if set(conversation_repo_ids) != set(repo_ids):
+                raise HTTPException(status_code=409, detail="Task repositories do not match conversation worktree")
         task_type = str(payload_data.get("task_type") or "develop_code").strip().lower()
         provider = str(payload_data.get("provider") or "codex").strip().lower()
         if task_type != "develop_code":
             raise HTTPException(status_code=400, detail="Project tasks currently support develop_code only")
         if provider not in SUPPORTED_PROVIDERS:
-            raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider}")
+            raise HTTPException(status_code=400, detail=f"不支持的编程工具: {provider}")
+        await self.require_configured_provider(
+            db,
+            current_user=current_user,
+            provider=provider,
+            project_id=str(project.id),
+        )
         payload_data.pop("command", None)
         primary_site = sites[0]
         task = Task(
             id=str(uuid.uuid4()),
             site_id=primary_site.id,
             project_id=str(project.id),
+            conversation_id=conversation_id or None,
             title=str(payload_data.get("title") or payload_data.get("prompt") or "多仓开发任务")[:255],
             description=str(payload_data.get("description") or payload_data.get("prompt") or ""),
             priority=str(payload_data.get("priority") or "medium"),
@@ -525,10 +924,33 @@ class TaskService:
             runtime_config_dir=str(Path("/tmp/nextproject-task-runtime") / str(uuid.uuid4())),
         )
         task.runtime_config_dir = str(Path("/tmp/nextproject-task-runtime") / str(task.id))
-        task.payload_json = {**payload_data, "project_id": str(project.id), "repo_ids": [site.site_id for site in sites]}
+        workspace_root = ""
+        conversation_repo_paths: dict[str, str] = {}
+        if conversation is not None and not completion_mode:
+            workspace_root = str(getattr(conversation, "worktree_root", "") or "")
+            conversation_repo_paths = {
+                str(item.get("site_id")): str(item.get("worktree_path") or "")
+                for item in (getattr(conversation, "git_repos_json", None) or [])
+            }
+            if not workspace_root or any(not conversation_repo_paths.get(site.site_id) for site in sites):
+                raise HTTPException(status_code=409, detail="Conversation worktree is incomplete")
+        elif completion_mode:
+            workspace_root = str(project_service.project_root(str(project.id)))
+        task.payload_json = {
+            **payload_data,
+            "project_id": str(project.id),
+            "repo_ids": [site.site_id for site in sites],
+            "workspace_root": workspace_root,
+            "branch_name": getattr(conversation, "branch_name", "") if conversation is not None else "",
+        }
         db.add(task)
         for site in sites:
-            db.add(TaskRepository(task_id=task.id, site_id=site.id, repo_path=str(self._repo_root_for_site(site))))
+            repo_path = (
+                conversation_repo_paths.get(site.site_id)
+                if conversation is not None and not completion_mode
+                else str(self._repo_root_for_site(site))
+            )
+            db.add(TaskRepository(task_id=task.id, site_id=site.id, repo_path=str(repo_path)))
         await db.commit()
         await db.refresh(task)
         await self.append_log(db, task, f"Project task created for {len(sites)} repos", source="api")
@@ -536,7 +958,38 @@ class TaskService:
             self.enqueue_task(task)
         return task
 
-    def enqueue_task(self, task: Task) -> None:
+    def _is_blank_repo_site(self, site: Site) -> bool:
+        config = getattr(site, "config", {}) or {}
+        source_type = str(config.get("source_type") or "").strip().lower()
+        starter = str(config.get("starter") or "").strip().lower()
+        if source_type in {"git", "starter"} or starter:
+            return False
+        return source_type in {"", "legacy", "blank", "empty"}
+
+    async def _should_include_default_stack_prompt(
+        self,
+        db: AsyncSession,
+        task: Task,
+        sites: list[Site],
+    ) -> bool:
+        if getattr(task, "task_type", "") != "develop_code" or not sites:
+            return False
+        if not all(self._is_blank_repo_site(site) for site in sites):
+            return False
+
+        site_ids = [str(site.id) for site in sites]
+        previous_rows = await db.execute(
+            select(func.count(func.distinct(Task.id)))
+            .join(TaskRepository, TaskRepository.task_id == Task.id)
+            .where(
+                Task.task_type == "develop_code",
+                Task.id != task.id,
+                TaskRepository.site_id.in_(site_ids),
+            )
+        )
+        return int(previous_rows.scalar_one() or 0) == 0
+
+    def enqueue_task(self, task: Task, *, raise_on_error: bool = False) -> bool:
         try:
             if task.task_type == "develop_code":
                 from backend.tasks.develop_code import develop_code_task
@@ -554,8 +1007,11 @@ class TaskService:
                 from backend.tasks.clone_repo import clone_repo_task
 
                 clone_repo_task.delay(str(task.id))
+            return True
         except Exception:
-            return
+            if raise_on_error:
+                raise
+            return False
 
     def _run_git(self, repo: Path, args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -610,10 +1066,10 @@ class TaskService:
         for binding in bindings:
             repo = Path(binding.repo_path)
             message = f"NextProject task {task.id}: {summary}"
-            after_sha, changed = self._commit_if_dirty(repo, message)
+            after_sha, committed = self._commit_if_dirty(repo, message)
             binding.after_sha = after_sha or binding.before_sha
-            binding.changed = changed
-            binding.commit_message = message if changed else ""
+            binding.changed = committed or binding.after_sha != binding.before_sha
+            binding.commit_message = message if committed else ""
         await db.commit()
         return bindings
 
@@ -701,6 +1157,7 @@ class TaskService:
         task = await self.get_task(db, task_id, current_user)
         status_val = getattr(task.status, "value", task.status)
         if status_val in {TaskStatus.QUEUED.value, TaskStatus.RUNNING.value}:
+            await self._cancel_adapter_run(str(task.provider or ""), str(task.id))
             await self.update_status(db, task, TaskStatus.CANCELED, error="Canceled by user")
             # 尝试撤销 Celery 任务
             celery_id = getattr(task, "celery_task_id", None)
@@ -711,6 +1168,34 @@ class TaskService:
                 except Exception:
                     pass
         await self.append_log(db, task, "Cancellation requested", "WARN", source="api")
+        return task
+
+    async def retry_task(self, db: AsyncSession, task_id: str, current_user: object) -> Task:
+        task = await self.get_task(db, task_id, current_user)
+        status_val = getattr(task.status, "value", task.status)
+        if status_val in {TaskStatus.QUEUED.value, TaskStatus.RUNNING.value}:
+            raise HTTPException(status_code=409, detail="任务正在执行中，不能重试")
+        if status_val not in {TaskStatus.FAILED.value, TaskStatus.CANCELED.value}:
+            raise HTTPException(status_code=409, detail="只有失败或已取消的任务可以重试")
+        if task.task_type == "develop_code":
+            await self.require_configured_provider(
+                db,
+                current_user=current_user,
+                provider=task.provider,
+                project_id=str(task.project_id) if task.project_id else None,
+            )
+
+        task.status = TaskStatus.QUEUED.value
+        task.board_status = EXEC_TO_BOARD_STATUS[TaskStatus.QUEUED.value]
+        task.error = ""
+        task.started_at = None
+        task.finished_at = None
+        task.celery_task_id = ""
+        await db.commit()
+        await db.refresh(task)
+        await self.append_log(db, task, "Retry requested", "WARN", source="api")
+        websocket_manager.publish(str(task.id), {"type": "status", "status": TaskStatus.QUEUED.value})
+        self.enqueue_task(task)
         return task
 
     async def delete_task(self, db: AsyncSession, task_id: str, current_user: object) -> None:
@@ -736,6 +1221,8 @@ class TaskService:
         heartbeat_interval_sec: int = 0,
         heartbeat_message: str = "",
         capture_output_path: str | None = None,
+        display_output_path: str | None = None,
+        extract_codex_user_output: bool = False,
     ) -> tuple[int, str]:
         if log_command or command_preview is not None:
             preview = command_preview if command_preview is not None else f"$ {' '.join(command)}"
@@ -755,6 +1242,10 @@ class TaskService:
         if capture_path is not None:
             capture_path.parent.mkdir(parents=True, exist_ok=True)
             capture_path.write_text("", encoding="utf-8")
+        display_path = Path(display_output_path) if display_output_path else None
+        if display_path is not None:
+            display_path.parent.mkdir(parents=True, exist_ok=True)
+            display_path.write_text("", encoding="utf-8")
         started_at = monotonic()
         last_heartbeat_at = started_at
         try:
@@ -783,6 +1274,27 @@ class TaskService:
                     with capture_path.open("a", encoding="utf-8") as fp:
                         fp.write(text)
                         fp.write("\n")
+                if extract_codex_user_output and display_path is not None:
+                    display_text = self._extract_codex_user_message(text)
+                    if display_text:
+                        with display_path.open("a", encoding="utf-8") as fp:
+                            if display_path.stat().st_size:
+                                fp.write("\n\n")
+                            fp.write(display_text)
+                            fp.write("\n")
+                        display_raw = display_path.read_bytes()
+                        display_truncated = len(display_raw) > 512_000
+                        if display_truncated:
+                            display_raw = display_raw[-512_000:]
+                        websocket_manager.publish(str(task.id), {
+                            "type": "provider_output",
+                            "data": {
+                                "provider": "codex",
+                                "available": True,
+                                "content": display_raw.decode("utf-8", errors="ignore"),
+                                "truncated": display_truncated,
+                            },
+                        })
                 if stream_output_to_logs:
                     await self.append_log(db, task, text, source=log_source)
                 last_heartbeat_at = monotonic()
@@ -797,46 +1309,122 @@ class TaskService:
         task = await db.get(Task, task_id)
         if task is None:
             raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
-            
-        original_provider = task.provider
-        supported_providers = ["claude_code", "codex", "gemini_cli"]
-        
-        # Determine fallback order
-        fallback_order = [original_provider]
-        for p in supported_providers:
-            if p != original_provider:
-                fallback_order.append(p)
-                
-        last_error = None
-        for attempt, current_provider in enumerate(fallback_order):
-            if attempt > 0:
-                await self.append_log(
-                    db, 
-                    task, 
-                    f"Provider {fallback_order[attempt-1]} failed. Attempting failover to {current_provider}...", 
-                    source="backend"
-                )
-                # update task provider for this attempt
-                task.provider = current_provider
-                await db.commit()
-                
+
+        provider = task.provider
+        try:
+            return await self._run_develop_task_for_provider(db, task_id)
+        except Exception as exc:
+            if await self._preserve_canceled_task(db, task):
+                return task
+            await self._mark_conversation_completion_failed(db, task, str(exc))
+            await self.append_log(
+                db,
+                task,
+                f"{self._provider_label(provider)} 执行失败: {exc}",
+                "ERROR",
+                source="backend",
+            )
+            await self.update_status(db, task, TaskStatus.FAILED, error=str(exc))
+            raise
+
+    async def _preserve_canceled_task(
+        self,
+        db: AsyncSession,
+        task: Task,
+        adapter_result: dict[str, Any] | None = None,
+    ) -> bool:
+        """Keep an acknowledged adapter cancellation from being rewritten as failed."""
+        await db.refresh(task)
+        status_value = getattr(task.status, "value", task.status)
+        adapter_canceled = bool((adapter_result or {}).get("canceled", False))
+        if status_value != TaskStatus.CANCELED.value and not adapter_canceled:
+            return False
+        if status_value != TaskStatus.CANCELED.value:
+            await self.update_status(db, task, TaskStatus.CANCELED, error="Canceled by user")
+        await self._mark_conversation_completion_failed(db, task, "任务已取消")
+        await self.append_log(
+            db,
+            task,
+            f"{self._provider_label(str(task.provider or ''))} 任务已取消",
+            "WARN",
+            source="backend",
+        )
+        return True
+
+    async def _mark_conversation_completion_failed(self, db: AsyncSession, task: Task, error: str) -> None:
+        payload = getattr(task, "payload_json", None) or {}
+        conv_id = str(payload.get("completion_conversation_id") or "").strip()
+        if not conv_id:
+            return
+        conv = await db.get(Conversation, conv_id)
+        if conv is None:
+            return
+        conv.completion_status = "failed"
+        conv.completion_error = error[:2000]
+        await db.commit()
+
+    async def _mark_conversation_completed(self, db: AsyncSession, task: Task) -> dict[str, Any]:
+        payload = getattr(task, "payload_json", None) or {}
+        conv_id = str(payload.get("completion_conversation_id") or "").strip()
+        if not conv_id:
+            return {}
+        from backend.services.conversation_service import conversation_service
+
+        async with conversation_service._lifecycle_lock(conv_id):
+            conv = await db.get(Conversation, conv_id)
+            if conv is None:
+                raise RuntimeError("Completion conversation no longer exists")
+            git_repos = list(getattr(conv, "git_repos_json", None) or [])
             try:
-                # Run the actual task execution logic for the current provider
-                return await self._run_develop_task_for_provider(db, task_id)
-            except Exception as e:
-                last_error = e
+                git_repos = conversation_git_service.verify_completed_repositories(git_repos)
+                remote_auth = await conversation_service._git_remote_auth(db, git_repos)
+                git_repos = conversation_git_service.push_completed_repositories(
+                    git_repos,
+                    remote_auth=remote_auth,
+                )
+            except Exception as exc:
+                conv.git_repos_json = [dict(item) for item in git_repos]
+                conv.completion_status = "failed"
+                conv.completion_error = redact_execution_text(str(exc))[:2000]
+                await db.commit()
+                raise
+            conv.git_repos_json = git_repos
+            conv.completion_status = "completed"
+            conv.completion_error = ""
+            conv.completed_at = datetime.now(timezone.utc)
+            await db.commit()
+            cleanup_exception = False
+            try:
+                conv = await conversation_service.cleanup_completed_conversation(db, conv_id)
+            except Exception as exc:
+                cleanup_exception = True
+                await db.rollback()
+                conv = await db.get(Conversation, conv_id)
+                if conv is not None:
+                    conv.cleanup_status = "warning"
+                    conv.cleanup_error = str(exc)[:4000]
+                    await db.commit()
                 await self.append_log(
                     db,
                     task,
-                    f"Execution with {current_provider} failed: {e}",
-                    "ERROR",
-                    source="backend"
+                    f"会话分支已合并，但自动清理失败: {exc}",
+                    "WARN",
+                    source="git",
                 )
-                continue
-                
-        # If we got here, all providers failed
-        await self.update_status(db, task, TaskStatus.FAILED, error=str(last_error))
-        raise last_error
+            if conv is None:
+                return {"status": "warning", "error": "Conversation cleanup state is unavailable"}
+            if getattr(conv, "cleanup_status", "") != "cleaned" and not cleanup_exception:
+                await self.append_log(
+                    db,
+                    task,
+                    f"会话分支已合并，清理未完全完成: {getattr(conv, 'cleanup_error', '') or '请重试清理'}",
+                    "WARN",
+                    source="git",
+                )
+            return {
+                "status": getattr(conv, "cleanup_status", "") or "retained",
+                "error": getattr(conv, "cleanup_error", "") or "",
+            }
         
     async def _run_develop_task_for_provider(self, db: AsyncSession, task_id: str) -> Task:
         task = await db.get(Task, task_id)
@@ -864,14 +1452,15 @@ class TaskService:
         site_map = {str(site.id): site for site in sites}
         primary_site = site_map.get(str(task.site_id)) or sites[0]
         owner_ref = self._owner_ref(primary_site)
-        project_root = self._project_root_for_task(task, primary_site)
+        project_root = self._project_root_for_task(task, primary_site, task_repos)
         project_root.mkdir(parents=True, exist_ok=True)
         project_id = str(task.project_id or primary_site.project_id or "")
         site_db_ids = [str(repo.site_id) for repo in task_repos]
 
         # 拼接上下文信息
         context_parts: list[str] = []
-        context_parts.append("[项目约定]\n默认后端: Python\n默认前端: Vue\n除非本次需求明确说明，否则按以上技术栈进行修改与新增。")
+        if await self._should_include_default_stack_prompt(db, task, sites):
+            context_parts.append(DEFAULT_STACK_PROMPT)
         repo_lines = []
         for repo in task_repos:
             site = site_map.get(str(repo.site_id))
@@ -881,7 +1470,16 @@ class TaskService:
             except Exception:
                 rel_path = str(repo_path)
             repo_lines.append(f"- {site.name if site else repo.site_id}: {rel_path} (site_id={site.site_id if site else repo.site_id})")
-        context_parts.append("[参与仓库]\n本任务需要在项目根目录下同时协调以下仓库修改：\n" + "\n".join(repo_lines))
+        if len(task_repos) == 1 and not bool(payload.get("completion_mode")):
+            repo_name = site_map.get(str(task_repos[0].site_id))
+            context_parts.append(
+                "[参与仓库]\n"
+                f"当前工作目录就是唯一参与仓库 {repo_name.name if repo_name else task_repos[0].site_id} 的根目录。"
+                "所有新增和修改都必须位于当前仓库内，不要在父目录或会话 worktree 根目录创建文件。\n"
+                + "\n".join(repo_lines)
+            )
+        else:
+            context_parts.append("[参与仓库]\n本任务需要在项目根目录下同时协调以下仓库修改：\n" + "\n".join(repo_lines))
         workflow_stages = list(getattr(task, "workflow_stages_json", None) or payload.get("workflow_stages") or [])
         if workflow_stages:
             labels = [WORKFLOW_STAGE_LABELS.get(stage, stage) for stage in workflow_stages]
@@ -930,132 +1528,38 @@ class TaskService:
             for skill in selected_skills:
                 skill_lines.append(f"## {skill['name']}\n{skill['content']}")
             context_parts.append("[已启用 Skills]\n" + "\n\n".join(skill_lines))
-        context_parts.append("[文档要求]\n完成修改任务后，将需求文档目录（docs）下的需求按照模块整理好。")
+        if not bool(payload.get("completion_mode")):
+            context_parts.append("[文档要求]\n完成修改任务后，将需求文档目录（docs）下的需求按照模块整理好。")
         if base_prompt:
             context_parts.append(f"[本次需求]\n{base_prompt}")
         prompt = "\n\n".join(context_parts) if context_parts else base_prompt
 
-        # 查询用户 Provider 配置
-        extra_env: dict[str, str] = {}
-        model_name = ""
-        runtime_context_root = Path(task.runtime_config_dir or (Path("/tmp/nextproject-task-runtime") / str(task.id)))
-        runtime_context_root.mkdir(parents=True, exist_ok=True)
-        task.runtime_config_dir = str(runtime_context_root)
-        await db.commit()
-        mcp_runtime = self._write_mcp_runtime_configs(runtime_context_root, enabled_mcp_services)
-        if provider == "codex":
-            extra_env["CODEX_HOME"] = mcp_runtime["codex_home"]
-        if enabled_mcp_services:
-            extra_env["NEXTPROJECT_MCP_CONFIG_PATH"] = self._write_runtime_file(
-                runtime_context_root,
-                "mcp-services.json",
-                {"services": enabled_mcp_services},
+        owner_id = str(primary_site.owner_id) if primary_site else ""
+        resolved_provider = await self.resolve_configured_tool_provider(
+            db,
+            user_id=owner_id,
+            provider=provider,
+            project_id=project_id or None,
+        )
+        if resolved_provider is None:
+            await programming_tool_service.require_project_provider(
+                db,
+                user_id=owner_id,
+                project_id=project_id,
+                tool_id=provider,
             )
-        if selected_skills:
-            extra_env["NEXTPROJECT_SKILLS_PATH"] = self._write_runtime_file(
-                runtime_context_root,
-                "skills.json",
-                {"skills": selected_skills},
-            )
-        extra_env["NEXTPROJECT_TASK_CONTEXT_DIR"] = str(runtime_context_root)
-        command: list[str] | None = shlex.split(command_text) if command_text else None
-        llm_provider = None
+            raise RuntimeError("Provider resolution failed")
+        llm_provider, api_format = resolved_provider
+        decrypted_key = decrypt_api_key(llm_provider.api_key)
+        model_name = programming_tool_service.provider_model(llm_provider)
         provider_output_path = self._provider_output_path(task, provider)
-        if not command:
-            from backend.models.user_llm_provider import UserLLMProvider
-            # 根据 provider 类型匹配 format
-            format_map = {"codex": "responses", "claude_code": "messages"}
-            needed_format = format_map.get(provider)
-            if needed_format:
-                owner_id = str(primary_site.owner_id) if primary_site else None
-                if owner_id:
-                    scope_conditions = [UserLLMProvider.scope_type == "global"]
-                    if project_id:
-                        scope_conditions.append(UserLLMProvider.project_id == project_id)
-                    rows = await db.execute(
-                        select(UserLLMProvider).where(
-                            UserLLMProvider.user_id == owner_id,
-                            or_(*scope_conditions),
-                        ).order_by(
-                            case((UserLLMProvider.project_id == project_id, 0), else_=1) if project_id else case((UserLLMProvider.scope_type == "global", 0), else_=1),
-                            UserLLMProvider.is_default.desc(),
-                            UserLLMProvider.created_at,
-                        )
-                    )
-                    for candidate in rows.scalars().all():
-                        raw_formats = getattr(candidate, "formats_json", None) or []
-                        if isinstance(raw_formats, str):
-                            raw_formats = [raw_formats]
-                        formats = [str(item).strip() for item in raw_formats if str(item).strip()]
-                        legacy_format = str(getattr(candidate, "format", "") or "").strip()
-                        if legacy_format and legacy_format not in formats:
-                            formats.insert(0, legacy_format)
-                        if needed_format in formats:
-                            llm_provider = candidate
-                            break
-
-            if llm_provider and llm_provider.api_key:
-                decrypted_key = decrypt_api_key(llm_provider.api_key)
-                model_name = (llm_provider.models or [""])[0] if llm_provider.models else ""
-                api_key_file = self._write_api_key_file(runtime_context_root, decrypted_key)
-                if provider == "codex":
-                    extra_env["CODEX_TASK_API_KEY_FILE"] = api_key_file
-                    extra_env["CODEX_TASK_HOME"] = mcp_runtime["codex_home"]
-                    if llm_provider.base_url:
-                        extra_env["CODEX_TASK_OPENAI_BASE_URL"] = llm_provider.base_url
-                        codex_config_path = Path(mcp_runtime["codex_home"]) / "config.toml"
-                        with codex_config_path.open("a", encoding="utf-8") as fp:
-                            fp.write(f'\nopenai_base_url = "{llm_provider.base_url}"\n')
-                    cmd_parts = [
-                        "sh",
-                        "-lc",
-                        (
-                            'set -e; '
-                            'export HOME="${CODEX_TASK_HOME}"; '
-                            'export CODEX_HOME="${CODEX_TASK_HOME}"; '
-                            'cat "${CODEX_TASK_API_KEY_FILE}" | codex login --with-api-key >/dev/null; '
-                            'exec codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox "$@"'
-                        ),
-                        "codex-task",
-                    ]
-                    if model_name:
-                        cmd_parts.extend(["--model", model_name])
-                    command = cmd_parts
-                elif provider == "claude_code":
-                    # Accepted Risk: Claude CLI only supports ANTHROPIC_API_KEY env var,
-                    # no file-based alternative exists. The env var is scoped to the
-                    # short-lived Celery worker subprocess and destroyed on completion.
-                    extra_env["ANTHROPIC_API_KEY"] = decrypted_key
-                    if llm_provider.base_url:
-                        extra_env["ANTHROPIC_BASE_URL"] = llm_provider.base_url
-                    cmd_parts = [os.getenv("CLAUDE_CMD", "claude")]
-                    cmd_parts.extend(["--mcp-config", mcp_runtime["claude_mcp_config"], "--strict-mcp-config"])
-                    if model_name:
-                        cmd_parts.extend(["--model", model_name])
-                    cmd_parts.append("-p")
-                    command = cmd_parts
-            if not command:
-                # 回退到环境变量默认命令
-                provider_commands = {
-                    "codex": os.getenv("CODEX_CMD", "codex exec"),
-                    "claude_code": os.getenv("CLAUDE_CMD", "claude"),
-                    "gemini_cli": os.getenv("GEMINI_CMD", "gemini"),
-                }
-                command_text = provider_commands.get(provider, "")
-                command = shlex.split(command_text) if command_text else None
-                if command and provider == "claude_code":
-                    command.extend(["--mcp-config", mcp_runtime["claude_mcp_config"], "--strict-mcp-config"])
-        if not command:
-            raise HTTPException(status_code=400, detail=f"Missing provider command for {provider}")
-        if prompt and not payload.get("command"):
-            command.append(prompt)
         await self.prepare_git_checkpoints(db, task)
         await self.update_status(db, task, TaskStatus.RUNNING)
-        log_source = provider or "shell"
         await self.append_log(
             db,
             task,
-            f"Provider 配置: {llm_provider.name if llm_provider else '环境默认'}",
+            f"编程工具配置: {llm_provider.name} · {api_format} · "
+            f"{'项目级' if str(llm_provider.scope_type or '') == 'project' else '全局'}",
             source="backend",
         )
         if model_name:
@@ -1079,61 +1583,80 @@ class TaskService:
                 "已启用 Skills: " + ", ".join(skill["name"] for skill in selected_skills),
                 source="backend",
             )
-        if provider == "codex":
-            await self.append_log(
-                db,
-                task,
-                "Codex 已启动。代码 diff 和原始生成内容不会直接显示在任务日志中。",
-                source="backend",
-            )
-            await self.append_log(
-                db,
-                task,
-                "任务运行期间，这里仍会持续显示上下文摘要和进度提示。",
-                source="backend",
-            )
-        exit_code, output = await self.run_shell_command(
+        await self.append_log(
             db,
             task,
-            command,
-            cwd=project_root,
-            extra_env=extra_env,
-            log_source=log_source,
-            stream_output_to_logs=provider != "codex",
-            log_command=provider != "codex",
-            command_preview=self._safe_command_preview(provider, model_name, command_text) if provider == "codex" else None,
-            heartbeat_interval_sec=15 if provider == "codex" else 0,
-            heartbeat_message="Codex 正在继续处理本次修改...",
-            capture_output_path=str(provider_output_path) if provider == "codex" else None,
+            f"{self._provider_label(provider)} 已启动。AI 输出区域会实时显示面向用户的说明。",
+            source="backend",
         )
+        exit_code, output, adapter_result = await self._run_adapter_stream(
+            db,
+            task,
+            provider=provider,
+            request_payload={
+                "task_id": str(task.id),
+                "conversation_id": (
+                    ""
+                    if payload.get("completion_mode")
+                    else str(getattr(task, "conversation_id", "") or payload.get("conversation_id") or "")
+                ),
+                "native_session_id": (
+                    "" if payload.get("completion_mode") else str(payload.get("provider_session_id") or "")
+                ),
+                "cwd": str(project_root),
+                "prompt": prompt,
+                "task_mode": "completion" if payload.get("completion_mode") else "develop",
+                "model": {
+                    "format": api_format,
+                    "base_url": str(llm_provider.base_url or ""),
+                    "api_key": decrypted_key,
+                    "model": model_name,
+                },
+                "mcp_servers": enabled_mcp_services,
+                "timeout_seconds": 1800,
+            },
+            display_path=provider_output_path,
+        )
+        native_session_id = ""
+        if not payload.get("completion_mode"):
+            native_session_id = await self._persist_provider_session_id(
+                db,
+                task,
+                str(adapter_result.get("native_session_id") or ""),
+            )
+        if await self._preserve_canceled_task(db, task, adapter_result):
+            return task
         if exit_code != 0:
-            if provider == "codex":
-                await self.append_log(
-                    db,
-                    task,
-                    f"Codex 执行结束，但退出码为 {exit_code}。详细输出已隐藏。",
-                    "WARN",
-                    source="backend",
-                )
-            error_msg = f"CLI exited with {exit_code}"
+            await self.append_log(
+                db,
+                task,
+                f"{self._provider_label(provider)} 执行结束，但退出码为 {exit_code}。可展开执行日志查看详情。",
+                "WARN",
+                source="backend",
+            )
+            error_msg = adapter_result.get("diagnostic") or f"CLI exited with {exit_code}"
             await self.update_status(db, task, TaskStatus.FAILED, error=error_msg)
             raise Exception(error_msg)
-        if provider == "codex":
-            await self.append_log(db, task, "Codex 执行完成", source="backend")
+        await self.append_log(db, task, f"{self._provider_label(provider)} 执行完成", source="backend")
         finalized_repos = await self.finalize_git_checkpoints(db, task)
+        conversation_cleanup = await self._mark_conversation_completed(db, task)
         restart_result: dict[str, Any] = {"attempted": False, "ok": True}
-        try:
-            restart_result["attempted"] = True
-            await self.append_log(db, task, "开发任务已完成，正在重启参与仓库预览...", source="backend")
-            for site in sites:
-                try:
-                    await site_service.restart_site(db, site.site_id, owner_ref)
-                except Exception as exc:
-                    await self.append_log(db, task, f"{site.name} 预览重启失败: {exc}", "WARN", source="backend")
-            await self.append_log(db, task, "参与仓库预览重启完成", source="backend")
-        except Exception as exc:
-            restart_result = {"attempted": True, "ok": False, "error": str(exc)}
-            await self.append_log(db, task, f"Site preview restart failed: {exc}", "WARN", source="backend")
+        is_worktree_task = bool(payload.get("workspace_root")) and not bool(payload.get("completion_mode"))
+        if is_worktree_task:
+            await self.append_log(db, task, "修改已保存在会话 worktree；合并会话后主预览才会更新", source="backend")
+        else:
+            try:
+                restart_result["attempted"] = True
+                await self.append_log(db, task, "开发任务已完成，正在重启参与仓库预览...", source="backend")
+                for site in sites:
+                    try:
+                        await site_service.restart_site(db, site.site_id, owner_ref)
+                    except Exception as exc:
+                        await self.append_log(db, task, f"{site.name} 预览重启失败: {exc}", "WARN", source="backend")
+                await self.append_log(db, task, "参与仓库预览重启完成", source="backend")
+            except Exception as exc:
+                restart_result = {"attempted": True, "ok": False, "error": str(exc)}
+                await self.append_log(db, task, f"Site preview restart failed: {exc}", "WARN", source="backend")
         await self.update_status(
             db,
             task,
@@ -1141,8 +1664,15 @@ class TaskService:
             result={
                 "provider": provider,
                 "exit_code": exit_code,
-                "output_tail": output[-2000:],
-                "provider_output_path": str(provider_output_path) if provider == "codex" else "",
+                "output_tail": (
+                    provider_output_path.read_text(encoding="utf-8", errors="ignore")[-2000:]
+                    if provider_output_path.exists()
+                    else output[-2000:]
+                ),
+                "provider_output_path": str(provider_output_path),
+                "usage": adapter_result.get("usage") or {},
+                "provider_session_id": native_session_id,
+                "conversation_cleanup": conversation_cleanup,
                 "preview_restart": restart_result,
                 "repositories": [
                     {

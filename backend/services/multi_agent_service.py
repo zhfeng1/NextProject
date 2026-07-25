@@ -17,7 +17,7 @@ class MultiAgentService:
         current_user: object,
         agents: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        selected_agents = agents or ["codex", "claude_code", "gemini_cli"]
+        selected_agents = agents or ["codex", "claude_code"]
         tasks = []
         for provider in selected_agents:
             task = await task_service.create_task(

@@ -15,7 +15,7 @@ export interface TaskPayload {
 
 export interface ProjectTaskPayload {
   repo_ids: string[]
-  provider: 'codex' | 'claude_code' | 'gemini_cli' | string
+  provider: string
   title: string
   prompt: string
   priority?: string
@@ -40,6 +40,28 @@ export interface TaskProviderOutput {
   available: boolean
   content: string
   truncated: boolean
+}
+
+export interface TaskWsTicket {
+  ticket: string
+}
+
+export interface ExecutionDetailEvent {
+  source: string
+  seq: number
+  ts: string
+  level: string
+  kind: string
+  content: string
+}
+
+export interface ExecutionDetailsResponse {
+  events: ExecutionDetailEvent[]
+  next_after_log_id: number
+  next_after_trace_seq: number
+  has_more: boolean
+  complete: boolean
+  redacted: boolean
 }
 
 export const tasksAPI = {
@@ -95,6 +117,24 @@ export const tasksAPI = {
     )
   },
 
+  createWsTicket(taskId: string) {
+    return client.post<any, TaskWsTicket>(`/tasks/${taskId}/ws-ticket`)
+  },
+
+  getExecutionDetails(taskId: string, afterLogId = 0, afterTraceSeq = 0, limit = 200) {
+    return client.get<any, ExecutionDetailsResponse>(`/tasks/${taskId}/execution-details`, {
+      params: {
+        after_log_id: afterLogId,
+        after_trace_seq: afterTraceSeq,
+        limit,
+      },
+      headers: {
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
+    })
+  },
+
   listBySite(siteId: string, opts: { task_type?: string; limit?: number } = {}) {
     const params = new URLSearchParams()
     if (opts.task_type) params.set('task_type', opts.task_type)
@@ -106,6 +146,10 @@ export const tasksAPI = {
 
   cancel(taskId: string) {
     return client.post(`/tasks/${taskId}/cancel`)
+  },
+
+  retry(taskId: string) {
+    return client.post<any, { ok: boolean; task: Task }>(`/tasks/${taskId}/retry`)
   },
 
   updateBoardStatus(taskId: string, boardStatus: string) {

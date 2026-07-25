@@ -6,6 +6,7 @@ export type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'dis
 export function useTaskLogs(taskId: Ref<string>) {
   const logs = ref<TaskLog[]>([])
   const status = ref<string>('')
+  const providerOutput = ref<{ available: boolean; content: string; truncated: boolean } | null>(null)
   const connectionState = ref<ConnectionState>('disconnected')
   const historyLoaded = ref(false)
 
@@ -14,38 +15,65 @@ export function useTaskLogs(taskId: Ref<string>) {
   let reconnectAttempts = 0
   const MAX_RECONNECT_DELAY = 30000
   let disposed = false
+  let connectionGeneration = 0
 
   function getLastLogId(): number {
     if (logs.value.length === 0) return 0
     return Math.max(...logs.value.map(l => l.id || 0))
   }
 
-  function buildWsUrl(afterId: number): string {
+  function buildWsUrl(afterId: number, ticket: string): string {
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${protocol}//${location.host}/ws/tasks/${taskId.value}/logs?after_id=${afterId}`
+    const params = new URLSearchParams({
+      ticket,
+      after_id: String(afterId),
+    })
+    return `${protocol}//${location.host}/ws/tasks/${encodeURIComponent(taskId.value)}/logs?${params.toString()}`
   }
 
-  function connect() {
-    if (disposed || !taskId.value) return
+  async function connect() {
+    if (!taskId.value) return
+    disposed = false
+    const generation = ++connectionGeneration
+    const connectingTaskId = taskId.value
     cleanup()
 
     const afterId = getLastLogId()
-    const url = buildWsUrl(afterId)
     connectionState.value = reconnectAttempts > 0 ? 'reconnecting' : 'connecting'
 
+    let ticket: string
     try {
-      ws = new WebSocket(url)
+      const response = await tasksAPI.createWsTicket(connectingTaskId)
+      ticket = response.ticket
+    } catch (err) {
+      if (generation !== connectionGeneration || disposed) return
+      console.warn('[useTaskLogs] Failed to acquire WebSocket ticket:', err)
+      scheduleReconnect()
+      return
+    }
+
+    if (
+      generation !== connectionGeneration
+      || disposed
+      || taskId.value !== connectingTaskId
+    ) return
+
+    let socket: WebSocket
+    try {
+      socket = new WebSocket(buildWsUrl(afterId, ticket))
+      ws = socket
     } catch {
       scheduleReconnect()
       return
     }
 
-    ws.onopen = () => {
+    socket.onopen = () => {
+      if (socket !== ws) return
       connectionState.value = 'connected'
       reconnectAttempts = 0
     }
 
-    ws.onmessage = (event) => {
+    socket.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data)
         switch (msg.type) {
@@ -66,11 +94,20 @@ export function useTaskLogs(taskId: Ref<string>) {
           case 'status':
             status.value = msg.status || ''
             break
+          case 'provider_output':
+            if (msg.data) {
+              providerOutput.value = {
+                available: Boolean(msg.data.available),
+                content: String(msg.data.content || ''),
+                truncated: Boolean(msg.data.truncated),
+              }
+            }
+            break
           case 'history_end':
             historyLoaded.value = true
             break
           case 'ping':
-            ws?.send(JSON.stringify({ type: 'pong' }))
+            socket.send(JSON.stringify({ type: 'pong' }))
             break
           case 'error':
             console.warn('[useTaskLogs] Server error:', msg.message)
@@ -81,14 +118,16 @@ export function useTaskLogs(taskId: Ref<string>) {
       }
     }
 
-    ws.onclose = () => {
+    socket.onclose = () => {
+      if (socket !== ws) return
+      ws = null
       connectionState.value = 'disconnected'
       if (!disposed) {
         scheduleReconnect()
       }
     }
 
-    ws.onerror = () => {
+    socket.onerror = () => {
       // onclose will fire after this, which handles reconnection
     }
   }
@@ -102,7 +141,7 @@ export function useTaskLogs(taskId: Ref<string>) {
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), MAX_RECONNECT_DELAY)
     connectionState.value = 'reconnecting'
     reconnectTimer = setTimeout(() => {
-      connect()
+      void connect()
     }, delay)
   }
 
@@ -125,12 +164,14 @@ export function useTaskLogs(taskId: Ref<string>) {
 
   function disconnect() {
     disposed = true
+    connectionGeneration++
     cleanup()
     connectionState.value = 'disconnected'
   }
 
   function clear() {
     logs.value = []
+    providerOutput.value = null
     historyLoaded.value = false
   }
 
@@ -157,7 +198,7 @@ export function useTaskLogs(taskId: Ref<string>) {
       status.value = ''
       reconnectAttempts = 0
       disposed = false
-      connect()
+      void connect()
     }
   })
 
@@ -168,6 +209,7 @@ export function useTaskLogs(taskId: Ref<string>) {
   return {
     logs,
     status,
+    providerOutput,
     connectionState,
     historyLoaded,
     connect,

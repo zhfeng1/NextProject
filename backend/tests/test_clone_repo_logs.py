@@ -101,6 +101,10 @@ async def test_clone_repo_task_writes_progress_logs_on_success(
         return real_exists(self)
 
     with patch("backend.tasks.clone_repo.subprocess.Popen", return_value=popen_mock), \
+         patch(
+             "backend.tasks.clone_repo.subprocess.run",
+             return_value=MagicMock(returncode=0, stdout="main\n", stderr=""),
+         ), \
          patch("backend.tasks.clone_repo.acquire_site_lock", return_value=True), \
          patch("backend.tasks.clone_repo.release_site_lock"), \
          patch("backend.services.site_service.SiteService._ensure_docs_structure"), \

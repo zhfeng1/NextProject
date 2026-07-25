@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, Query, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_db, require_role
+from backend.core.task_stream_ticket import (
+    TaskStreamTicketStoreUnavailable,
+    task_stream_ticket_store,
+)
 from backend.services.task_service import task_service
 
 router = APIRouter(prefix="/tasks")
@@ -127,6 +131,50 @@ async def get_task_provider_output(
     return {"ok": True, **data}
 
 
+@router.post("/{task_id}/ws-ticket")
+async def create_task_stream_ticket(
+    task_id: str,
+    response: Response,
+    current_user: object = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    task = await task_service.get_task(db, task_id, current_user)
+    try:
+        ticket = await task_stream_ticket_store.issue(
+            user_id=str(getattr(current_user, "id", "")),
+            task_id=str(task.id),
+            ttl_seconds=60,
+        )
+    except TaskStreamTicketStoreUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Task stream authentication is unavailable") from exc
+    return {"ok": True, "task_id": str(task.id), "ticket": ticket, "expires_in": 60}
+
+
+@router.get("/{task_id}/execution-details")
+async def get_task_execution_details(
+    task_id: str,
+    response: Response,
+    after_log_id: int = Query(default=0, ge=0),
+    after_trace_seq: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, ge=1, le=200),
+    current_user: object = Depends(require_role("developer")),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    data = await task_service.get_task_execution_details(
+        db,
+        task_id,
+        current_user,
+        after_log_id=after_log_id,
+        after_trace_seq=after_trace_seq,
+        limit=limit,
+    )
+    return {"ok": True, **data}
+
+
 @router.post("/{task_id}/cancel")
 async def cancel_task(
     task_id: str,
@@ -135,6 +183,16 @@ async def cancel_task(
 ) -> dict[str, Any]:
     task = await task_service.cancel_task(db, task_id, current_user)
     return {"ok": True, "task": task_service.serialize_task(task)}
+
+
+@router.post("/{task_id}/retry")
+async def retry_task(
+    task_id: str,
+    current_user: object = Depends(require_role("developer")),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    task = await task_service.retry_task(db, task_id, current_user)
+    return {"ok": True, "task": await task_service.serialize_task_detail(db, task)}
 
 
 @router.post("/{task_id}/rollback")

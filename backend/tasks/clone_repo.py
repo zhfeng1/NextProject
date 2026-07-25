@@ -11,6 +11,7 @@ from backend.core.redis_lock import acquire_site_lock, release_site_lock
 from backend.models import AgentTask
 from backend.models.enums import TaskStatus, SiteStatus
 from backend.models.site import Site
+from backend.services.execution_trace_service import redact_execution_text
 from backend.tasks._helpers import task_db_session
 
 
@@ -58,9 +59,11 @@ async def _run_clone(task_id: str, *, retry_cb=None) -> dict[str, object]:
             await db.commit()
 
             from backend.services.task_service import task_service
+            from backend.services.site_service import site_service
             await task_service.append_log(
                 db, task,
-                f"开始克隆 {git_url} (branch={git_branch or 'default'})",
+                f"开始克隆 {redact_execution_text(site_service.sanitize_git_url(git_url))} "
+                f"(branch={git_branch or 'default'})",
                 level="INFO", source="clone",
             )
 
@@ -82,37 +85,43 @@ async def _run_clone(task_id: str, *, retry_cb=None) -> dict[str, object]:
             shutil.rmtree(clone_root, ignore_errors=True)
         Path(clone_root).parent.mkdir(parents=True, exist_ok=True)
 
-        clone_url = site_service._build_authenticated_git_url(git_url, git_username, git_password)
-        cmd = [git_bin, "clone", "--progress"]
+        embedded_username, embedded_password = site_service.git_url_credentials(git_url)
+        git_username = git_username or embedded_username
+        git_password = git_password or embedded_password
+        public_url = site_service.sanitize_git_url(git_url)
+        cmd = [git_bin, "-c", "credential.helper=", "clone", "--progress"]
         if git_branch:
             cmd.extend(["--branch", git_branch, "--single-branch"])
-        cmd.extend([clone_url, str(clone_root)])
+        cmd.extend([public_url, str(clone_root)])
 
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
-        try:
-            assert proc.stdout is not None
-            for raw in proc.stdout:
-                line = raw.rstrip("\r\n")
-                if not line:
-                    continue
-                # 短事务写一条日志（让 WS 立即看到）
-                async with task_db_session() as db:
-                    task = await db.get(AgentTask, task_id)
-                    from backend.services.task_service import task_service
-                    await task_service.append_log(
-                        db, task, line, level="INFO", source="git",
-                    )
-            rc = proc.wait()
-        finally:
-            if proc.poll() is None:
-                proc.kill()
-                proc.wait()
+        with site_service.git_network_env(git_username, git_password) as network_env:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                env=network_env,
+            )
+            try:
+                assert proc.stdout is not None
+                for raw in proc.stdout:
+                    line = raw.rstrip("\r\n")
+                    if not line:
+                        continue
+                    line = redact_execution_text(line)
+                    # 短事务写一条日志（让 WS 立即看到）
+                    async with task_db_session() as db:
+                        task = await db.get(AgentTask, task_id)
+                        from backend.services.task_service import task_service
+                        await task_service.append_log(
+                            db, task, line, level="INFO", source="git",
+                        )
+                rc = proc.wait()
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait()
 
         # 4) 收尾
         async with task_db_session() as db:
@@ -133,9 +142,31 @@ async def _run_clone(task_id: str, *, retry_cb=None) -> dict[str, object]:
                     await db.commit()
                     raise RuntimeError(task.error)
 
+                normalized = subprocess.run(
+                    [git_bin, "remote", "set-url", "origin", public_url],
+                    cwd=str(clone_root),
+                    capture_output=True,
+                    text=True,
+                )
+                if normalized.returncode != 0:
+                    site.status = SiteStatus.ERROR.value
+                    task.status = TaskStatus.FAILED.value
+                    task.error = "Failed to normalize cloned repository origin URL"
+                    task.finished_at = datetime.now(timezone.utc)
+                    await task_service.append_log(db, task, task.error, level="ERROR", source="clone")
+                    await db.commit()
+                    raise RuntimeError(task.error)
+
                 # 让 site_service 补全文档/np 目录
                 site_service._ensure_docs_structure(Path(clone_root))
                 site_service._ensure_np_structure(Path(clone_root))
+                branch_result = subprocess.run(
+                    [git_bin, "branch", "--show-current"],
+                    cwd=str(clone_root),
+                    capture_output=True,
+                    text=True,
+                )
+                site.main_branch = git_branch or (branch_result.stdout.strip() if branch_result.returncode == 0 else "")
 
                 site.status = SiteStatus.STOPPED.value
                 task.status = TaskStatus.SUCCESS.value
