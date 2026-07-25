@@ -10,10 +10,19 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { sitesAPI } from '@/api/sites'
 import { tasksAPI } from '@/api/tasks'
+import {
+  programmingToolLabel,
+  programmingToolReason,
+  programmingToolsAPI,
+  visibleProgrammingTools,
+  type ProgrammingTool,
+} from '@/api/programmingTools'
 import type { Task, TaskLog } from '@/api/tasks'
 import { useIframeBridge } from '@/composables/useIframeBridge'
 import SiteFileBrowserDialog from '@/components/SiteFileBrowserDialog.vue'
 import ConversationPanel from '@/components/ConversationPanel.vue'
+import ProgrammingToolPicker from '@/components/ProgrammingToolPicker.vue'
+import AiOutputStream from '@/components/AiOutputStream.vue'
 import {
   Globe, RotateCw, MousePointerSquareDashed, TriangleAlert, Maximize2,
   FolderOpen, ChevronUp, ChevronDown, X,
@@ -84,18 +93,61 @@ const fileBrowserRefreshKey = ref(0)
 
 // ── 需求输入 ─────────────────────────────────────────────────────────────────
 const userInput = ref('')
-const provider = ref('codex')
-const PROVIDERS = [
-  { value: 'codex', label: 'Codex' },
-  { value: 'claude_code', label: 'Claude Code' },
-  { value: 'gemini_cli', label: 'Gemini' },
-]
+const provider = ref('')
+const programmingTools = ref<ProgrammingTool[]>([])
 const submitting = ref(false)
+const providerAvailabilityLoading = ref(true)
+const programmingToolsError = ref('')
+const availableTools = computed(() => visibleProgrammingTools(programmingTools.value))
+const selectedTool = computed(() => availableTools.value.find(tool => tool.id === provider.value) || null)
+const canUseSelectedProvider = computed(() => selectedTool.value?.available === true)
+const selectedToolReason = computed(() => programmingToolReason(selectedTool.value))
+const providerSettingsPath = computed(() => {
+  const projectId = String(site.value?.project_id || '').trim()
+  return projectId ? `/projects/${projectId}?section=model-config` : '/projects'
+})
+
+async function loadProgrammingTools() {
+  providerAvailabilityLoading.value = true
+  programmingToolsError.value = ''
+  try {
+    const projectId = String(site.value?.project_id || '').trim()
+    if (!projectId) {
+      programmingTools.value = []
+      provider.value = ''
+      return
+    }
+    const res = await programmingToolsAPI.list(projectId)
+    programmingTools.value = visibleProgrammingTools(res.tools || [])
+    const current = programmingTools.value.find(tool => tool.id === provider.value && tool.available)
+    provider.value = current?.id
+      || programmingTools.value.find(tool => tool.available)?.id
+      || programmingTools.value[0]?.id
+      || ''
+  } catch (error: any) {
+    programmingTools.value = []
+    provider.value = ''
+    programmingToolsError.value = error?.response?.data?.detail || '无法加载编程工具状态，请检查网络后重试'
+  } finally {
+    providerAvailabilityLoading.value = false
+  }
+}
+
+function goToProviderSettings() {
+  router.push(providerSettingsPath.value)
+}
+
+function providerLabel(value?: string) {
+  return programmingToolLabel(value, availableTools.value)
+}
 
 async function launchTask(payload: Record<string, unknown>, requirementText = '') {
   resetTaskLogs()
+  logsOpen.value = false
   currentTask.value = null
   taskStatus.value = ''
+  providerOutput.value = ''
+  providerOutputTruncated.value = false
   try {
     if (requirementText) {
       const reqRes = await sitesAPI.addRequirement(siteId.value, requirementText)
@@ -117,6 +169,15 @@ async function launchTask(payload: Record<string, unknown>, requirementText = ''
 async function submitRequirement() {
   const text = userInput.value.trim()
   if (!text || submitting.value) return
+  if (!canUseSelectedProvider.value) {
+    taskLogs.value.push({
+      id: -1,
+      ts: new Date().toISOString(),
+      level: 'ERROR',
+      line: selectedToolReason.value,
+    })
+    return
+  }
   submitting.value = true
   try {
     const errors = consoleErrors.value.map(e => `[${e.type}] ${e.message}`).join('\n')
@@ -152,16 +213,31 @@ const providerOutputRef = ref<HTMLElement | null>(null)
 const providerOutputOpen = ref(false)
 const providerOutput = ref('')
 const providerOutputTruncated = ref(false)
+const logsOpen = ref(false)
 let ws: WebSocket | null = null
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null
+let streamGeneration = 0
 
 function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
 }
 
 function stopTaskStream() {
+  streamGeneration += 1
   stopPolling()
-  if (ws) { ws.close(); ws = null }
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer)
+    wsReconnectTimer = null
+  }
+  if (ws) {
+    ws.onopen = null
+    ws.onmessage = null
+    ws.onclose = null
+    ws.onerror = null
+    ws.close()
+    ws = null
+  }
 }
 
 function isTerminal(status: string) {
@@ -173,7 +249,7 @@ function resetTaskLogs() {
   latestLogId.value = 0
 }
 
-const currentTaskSupportsProviderOutput = computed(() => currentTask.value?.provider === 'codex')
+const currentTaskSupportsProviderOutput = computed(() => Boolean(currentTask.value?.provider))
 
 function syncTaskStatus(taskId: string, status: string) {
   taskStatus.value = status
@@ -224,7 +300,7 @@ function onTaskFinished(status: string) {
   }
   stopTaskStream()
   void refreshTaskHistory()
-  if (currentTask.value?.provider === 'codex') {
+  if (currentTaskSupportsProviderOutput.value && currentTask.value) {
     void fetchProviderOutput(currentTask.value.id)
   }
   if (status === 'success') {
@@ -243,13 +319,13 @@ async function pollTaskStatus(taskId: string) {
     if (!task) return
     currentTask.value = task
     syncTaskStatus(task.id, task.status)
-    if (providerOutputOpen.value && task.provider === 'codex') {
+    if (task.provider) {
       await fetchProviderOutput(taskId)
     }
     // 任务已结束
     if (isTerminal(task.status)) {
       await fetchTaskLogs(taskId, true)
-      if (task.provider === 'codex') {
+      if (task.provider) {
         await fetchProviderOutput(taskId)
       }
       onTaskFinished(task.status)
@@ -257,15 +333,53 @@ async function pollTaskStatus(taskId: string) {
   } catch {}
 }
 
-function connectTaskWS(taskId: string, initialStatus = 'queued') {
+function scheduleTaskStreamReconnect(taskId: string, attempt: number) {
+  if (isTerminal(taskStatus.value)) return
+  if (wsReconnectTimer) clearTimeout(wsReconnectTimer)
+  const delay = Math.min(1000 * Math.pow(2, attempt), 30000)
+  wsReconnectTimer = setTimeout(() => {
+    void connectTaskWS(taskId, taskStatus.value || 'queued', attempt + 1)
+  }, delay)
+}
+
+async function connectTaskWS(taskId: string, initialStatus = 'queued', reconnectAttempt = 0) {
   stopTaskStream()
+  const generation = streamGeneration
   taskStatus.value = initialStatus
 
-  // WebSocket 实时日志（带历史回放 + 心跳）
+  // 初始轮询兜底（WebSocket 建立前也保持状态和 AI 输出同步）
+  pollTimer = setInterval(() => pollTaskStatus(taskId), 5000)
+  setTimeout(() => {
+    if (generation === streamGeneration) void pollTaskStatus(taskId)
+  }, 1500)
+
+  let ticket: string
+  try {
+    const response = await tasksAPI.createWsTicket(taskId)
+    ticket = response.ticket
+  } catch {
+    if (generation === streamGeneration) scheduleTaskStreamReconnect(taskId, reconnectAttempt)
+    return
+  }
+
+  if (generation !== streamGeneration || isTerminal(taskStatus.value)) return
+
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-  const afterId = latestLogId.value
-  ws = new WebSocket(`${proto}://${location.host}/ws/tasks/${taskId}/logs?after_id=${afterId}`)
-  ws.onmessage = (e) => {
+  const params = new URLSearchParams({
+    ticket,
+    after_id: String(latestLogId.value),
+  })
+  let socket: WebSocket
+  try {
+    socket = new WebSocket(`${proto}://${location.host}/ws/tasks/${encodeURIComponent(taskId)}/logs?${params.toString()}`)
+    ws = socket
+  } catch {
+    scheduleTaskStreamReconnect(taskId, reconnectAttempt)
+    return
+  }
+
+  socket.onmessage = (e) => {
+    if (generation !== streamGeneration || socket !== ws) return
     try {
       const msg = JSON.parse(e.data)
       if (msg.type === 'log' && msg.data) {
@@ -277,13 +391,17 @@ function connectTaskWS(taskId: string, initialStatus = 'queued') {
           line: msg.data.line || '',
         }
         appendLogs([entry])
+      } else if (msg.type === 'provider_output' && msg.data) {
+        providerOutput.value = String(msg.data.content || '')
+        providerOutputTruncated.value = Boolean(msg.data.truncated)
+        scrollProviderOutput()
       } else if (msg.type === 'status') {
         syncTaskStatus(taskId, msg.status)
         if (isTerminal(msg.status)) {
           onTaskFinished(msg.status)
         }
       } else if (msg.type === 'ping') {
-        ws?.send(JSON.stringify({ type: 'pong' }))
+        socket.send(JSON.stringify({ type: 'pong' }))
       } else if (msg.type === 'history_end') {
         // 历史回放完成，降低轮询频率
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
@@ -291,19 +409,17 @@ function connectTaskWS(taskId: string, initialStatus = 'queued') {
       }
     } catch {}
   }
-  ws.onclose = () => {
+  socket.onclose = () => {
+    if (generation !== streamGeneration || socket !== ws) return
+    ws = null
     // WS 断开后恢复快速轮询作为兜底
     if (!isTerminal(taskStatus.value)) {
       stopPolling()
       pollTimer = setInterval(() => pollTaskStatus(taskId), 3000)
+      scheduleTaskStreamReconnect(taskId, reconnectAttempt)
     }
   }
-  ws.onerror = () => {}
-
-  // 初始轮询兜底（WS 连接建立前保障），WS history_end 后降频
-  pollTimer = setInterval(() => pollTaskStatus(taskId), 5000)
-  // 立即查一次（应对任务在 WS 连接前就结束的情况）
-  setTimeout(() => pollTaskStatus(taskId), 1500)
+  socket.onerror = () => {}
 }
 
 function scrollLogs() {
@@ -325,6 +441,7 @@ const restarting = ref(false)
 async function restartSite() {
   restarting.value = true
   resetTaskLogs()
+  logsOpen.value = false
   taskStatus.value = ''
   currentTask.value = null
   try {
@@ -351,11 +468,14 @@ async function inspectTask(task: Task) {
   currentTask.value = task
   taskStatus.value = task.status || ''
   stopTaskStream()
-  if (switchedTask) resetTaskLogs()
+  if (switchedTask) {
+    resetTaskLogs()
+    logsOpen.value = false
+  }
   providerOutput.value = ''
   providerOutputTruncated.value = false
   await fetchTaskLogs(task.id, true)
-  if (task.provider === 'codex') {
+  if (task.provider) {
     await fetchProviderOutput(task.id)
   }
   if (!isTerminal(task.status)) {
@@ -401,8 +521,11 @@ function onConvTaskCreated(taskId: string) {
   // Switch to classic tab to show task logs, then connect WS
   rightTab.value = 'classic'
   resetTaskLogs()
+  logsOpen.value = false
   currentTask.value = null
   taskStatus.value = ''
+  providerOutput.value = ''
+  providerOutputTruncated.value = false
   connectTaskWS(taskId, 'queued')
   refreshTaskHistory()
 }
@@ -417,7 +540,7 @@ watch(logsExpanded, (expanded) => {
   if (expanded) scrollLogs()
 })
 watch(providerOutputOpen, (open) => {
-  if (open && currentTask.value?.provider === 'codex') {
+  if (open && currentTaskSupportsProviderOutput.value && currentTask.value) {
     void fetchProviderOutput(currentTask.value.id)
   }
 })
@@ -464,7 +587,7 @@ function goBackToSites() {
 onMounted(async () => {
   await loadSite()
   if (canOperateOnSite.value) {
-    await Promise.all([loadRequirements(), refreshTaskHistory()])
+    await Promise.all([loadRequirements(), refreshTaskHistory(), loadProgrammingTools()])
   }
 })
 
@@ -594,7 +717,12 @@ onUnmounted(() => { stopTaskStream() })
             :selected-xpath="pickedElement?.xpath || ''"
             :console-errors="consoleErrors.map(e => `[${e.type}] ${e.message}`).join('\n')"
             :provider="provider"
+            :programming-tools="availableTools"
+            :programming-tools-loading="providerAvailabilityLoading"
+            :programming-tools-error="programmingToolsError"
+            :provider-settings-to="providerSettingsPath"
             @task-created="onConvTaskCreated"
+            @retry-programming-tools="loadProgrammingTools"
           />
           <div v-else class="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
             站点未加载成功，暂不可发起对话任务。
@@ -614,17 +742,30 @@ onUnmounted(() => { stopTaskStream() })
               v-model="userInput" rows="4"
               placeholder="描述你想修改的内容，AI 会结合当前页面和历史需求一起处理…"
               class="w-full resize-none rounded-md border border-input bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring"
+              aria-label="需求描述"
             />
-            <div class="flex gap-1">
-              <button
-                v-for="p in PROVIDERS" :key="p.value" @click="provider = p.value"
-                class="flex-1 rounded-md border py-1 text-xs transition-colors"
-                :class="provider === p.value
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border bg-background text-foreground hover:bg-muted'"
-              >{{ p.label }}</button>
+            <ProgrammingToolPicker
+              v-model="provider"
+              :tools="availableTools"
+              :loading="providerAvailabilityLoading"
+            />
+            <div
+              v-if="!providerAvailabilityLoading && programmingToolsError"
+              role="alert"
+              class="rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-2 text-xs text-destructive"
+            >
+              {{ programmingToolsError }}。
+              <button type="button" class="ml-1 font-medium underline underline-offset-2" @click="loadProgrammingTools">重新加载</button>
             </div>
-            <Button class="w-full" size="sm" :disabled="submitting || !userInput.trim() || !canOperateOnSite" @click="submitRequirement">
+            <div
+              v-else-if="!providerAvailabilityLoading && !canUseSelectedProvider"
+              role="alert"
+              class="rounded-md border border-warning/30 bg-warning/10 px-2.5 py-2 text-xs text-warning"
+            >
+              {{ selectedToolReason }}。
+              <button type="button" class="ml-1 font-medium underline underline-offset-2" @click="goToProviderSettings">前往配置</button>
+            </div>
+            <Button class="w-full" size="sm" :disabled="submitting || !userInput.trim() || !canOperateOnSite || providerAvailabilityLoading || !canUseSelectedProvider" @click="submitRequirement">
               {{ submitting ? '提交中…' : '提交给 AI 编码' }}
             </Button>
           </CardContent>
@@ -696,7 +837,54 @@ onUnmounted(() => { stopTaskStream() })
           </CardContent>
         </Card>
 
-        <!-- ④ 任务日志 -->
+        <!-- ④ AI 输出 -->
+        <Card v-if="currentTaskSupportsProviderOutput" class="shadow-none">
+          <CardHeader class="px-3 pb-1 pt-2">
+            <div class="flex items-center justify-between gap-2">
+              <CardTitle class="flex items-center gap-1.5 text-sm">
+                AI 输出
+                <span
+                  class="flex items-center gap-1 rounded px-2 text-[11px] font-medium"
+                  :class="STATUS_BADGE_CLASS[taskStatus]"
+                >
+                  <span
+                    class="status-dot"
+                    :data-tone="statusTone(taskStatus)"
+                    :data-pulse="statusPulse(taskStatus)"
+                  />
+                  {{ STATUS_LABEL[taskStatus] || taskStatus || '—' }}
+                </span>
+              </CardTitle>
+              <Button
+                size="sm"
+                variant="ghost"
+                class="h-6 px-2 text-[11px]"
+                @click="providerOutputOpen = true"
+              >
+                <Maximize2 class="size-3.5" />
+                放大
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent class="px-3 pb-3 pt-1">
+            <div
+              v-if="providerOutputTruncated"
+              class="mb-2 rounded border border-warning/30 bg-warning/10 px-2.5 py-2 text-[11px] text-warning"
+            >
+              输出较长，当前仅展示最近一部分内容。
+            </div>
+            <div class="max-h-72 overflow-y-auto rounded-lg border bg-muted/20 p-3">
+              <AiOutputStream
+                :content="providerOutput"
+                :empty-text="isTerminal(taskStatus) ? '暂无可展示输出' : '等待编程工具输出面向用户的说明…'"
+                :active="!isTerminal(taskStatus)"
+                compact
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <!-- ⑤ 任务日志 -->
         <Card v-if="currentTask || taskLogs.length" class="shadow-none">
           <CardHeader class="px-3 pb-1 pt-2">
             <div class="flex items-center justify-between">
@@ -715,6 +903,18 @@ onUnmounted(() => { stopTaskStream() })
                 </span>
               </CardTitle>
               <div class="flex gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  class="h-6 px-2 text-[11px]"
+                  :aria-expanded="logsOpen"
+                  aria-controls="site-task-execution-logs"
+                  @click="logsOpen = !logsOpen"
+                >
+                  <ChevronUp v-if="logsOpen" class="size-3.5" />
+                  <ChevronDown v-else class="size-3.5" />
+                  {{ logsOpen ? '收起' : '展开' }}
+                </Button>
                 <Button size="sm" variant="ghost" class="h-6 w-6 p-0" title="放大" @click="logsExpanded = true">
                   <Maximize2 class="size-3.5" />
                 </Button>
@@ -722,7 +922,7 @@ onUnmounted(() => { stopTaskStream() })
               </div>
             </div>
           </CardHeader>
-          <CardContent class="px-0 pb-0">
+          <CardContent v-if="logsOpen" id="site-task-execution-logs" class="px-0 pb-0">
             <div
               ref="logsRef"
               class="terminal h-52 overflow-y-auto px-3 py-2 text-[11px] leading-relaxed"
@@ -739,7 +939,7 @@ onUnmounted(() => { stopTaskStream() })
           </CardContent>
         </Card>
 
-        <!-- ⑤ 历史需求文档 -->
+        <!-- ⑥ 历史需求文档 -->
         <Card v-if="requirementsDoc" class="shadow-none">
           <CardHeader class="cursor-pointer select-none px-3 pb-1 pt-2" @click="showRequirements = !showRequirements">
             <div class="flex items-center justify-between">
@@ -753,7 +953,7 @@ onUnmounted(() => { stopTaskStream() })
           </CardContent>
         </Card>
 
-        <!-- ⑥ 快捷操作 + 最近任务 -->
+        <!-- ⑦ 快捷操作 + 最近任务 -->
         <Card class="shadow-none">
           <CardHeader class="px-3 pb-1 pt-2">
             <CardTitle class="text-sm">快捷操作</CardTitle>
@@ -789,7 +989,7 @@ onUnmounted(() => { stopTaskStream() })
                     />
                     {{ STATUS_LABEL[t.status] || t.status }}
                   </span>
-                  <span class="truncate text-muted-foreground">{{ t.provider || t.task_type }}</span>
+                  <span class="truncate text-muted-foreground">{{ t.provider ? providerLabel(t.provider) : t.task_type }}</span>
                   <span class="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-foreground/80">
                     日志
                   </span>
@@ -836,7 +1036,7 @@ onUnmounted(() => { stopTaskStream() })
                 class="h-7 px-2 text-xs text-zinc-400 hover:text-zinc-200"
                 @click="providerOutputOpen = true"
               >
-                Codex 输出
+                AI 输出
               </Button>
               <Button size="sm" variant="ghost" class="h-7 gap-1 px-2 text-xs text-zinc-400 hover:text-zinc-200" @click="logsExpanded = false">
                 <X class="size-4" />
@@ -869,7 +1069,7 @@ onUnmounted(() => { stopTaskStream() })
           <div class="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-3">
             <div class="min-w-0">
               <div class="flex items-center gap-2 text-sm text-zinc-300">
-                <span class="font-medium">Codex 输出</span>
+                <span class="font-medium">AI 输出</span>
                 <span
                   class="flex items-center gap-1 rounded px-2 text-[11px] font-medium"
                   :class="STATUS_BADGE_CLASS[taskStatus]"
@@ -882,12 +1082,12 @@ onUnmounted(() => { stopTaskStream() })
                   {{ STATUS_LABEL[taskStatus] || taskStatus || '—' }}
                 </span>
               </div>
-              <p class="mt-1 text-xs text-zinc-500">这里显示 Codex 的原始终端输出，方便判断是否需要你的进一步输入。</p>
             </div>
             <div class="flex items-center gap-2">
-              <Button size="sm" variant="ghost" class="h-7 px-2 text-xs text-zinc-400 hover:text-zinc-200" @click="currentTask?.id && fetchProviderOutput(currentTask.id)">
-                刷新
-              </Button>
+              <span class="flex items-center gap-1.5 text-xs text-zinc-500">
+                <span class="status-dot" :data-tone="isTerminal(taskStatus) ? 'muted' : 'success'" :data-pulse="!isTerminal(taskStatus)" />
+                {{ isTerminal(taskStatus) ? '同步完成' : '实时同步' }}
+              </span>
               <Button size="sm" variant="ghost" class="h-7 px-2 text-xs text-zinc-400 hover:text-zinc-200" @click="providerOutputOpen = false">
                 关闭 (Esc)
               </Button>
@@ -897,10 +1097,12 @@ onUnmounted(() => { stopTaskStream() })
             <div v-if="providerOutputTruncated" class="mb-3 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
               输出较长，当前窗口仅展示最近一部分内容。
             </div>
-            <pre v-if="providerOutput" class="whitespace-pre-wrap break-all">{{ providerOutput }}</pre>
-            <div v-else class="pt-20 text-center text-zinc-600">
-              暂时还没有 Codex 输出，任务运行中会自动刷新这里的内容。
-            </div>
+            <AiOutputStream
+              :content="providerOutput"
+              empty-text="暂时还没有可展示内容，编程工具产生用户可见说明后会自动出现在这里。"
+              :active="!isTerminal(taskStatus)"
+              variant="terminal"
+            />
           </div>
         </div>
       </div>

@@ -16,7 +16,6 @@ DEFAULT_TEMPLATES = [
         "category": "landing",
         "description": "A conversion-focused landing page for software products.",
         "thumbnail_url": "https://placehold.co/600x400?text=SaaS+Landing",
-        "code_archive_url": "s3://site-templates/saas-landing.tar.gz",
         "tech_stack": {"backend": "fastapi", "frontend": "vue3"},
     },
     {
@@ -25,7 +24,6 @@ DEFAULT_TEMPLATES = [
         "category": "blog",
         "description": "Editorial blog starter with article, category and author pages.",
         "thumbnail_url": "https://placehold.co/600x400?text=Content+Blog",
-        "code_archive_url": "s3://site-templates/content-blog.tar.gz",
         "tech_stack": {"backend": "fastapi", "frontend": "vue3"},
     },
     {
@@ -34,7 +32,6 @@ DEFAULT_TEMPLATES = [
         "category": "dashboard",
         "description": "Operations dashboard with cards, charts and role-based navigation.",
         "thumbnail_url": "https://placehold.co/600x400?text=Analytics+Dashboard",
-        "code_archive_url": "s3://site-templates/analytics-dashboard.tar.gz",
         "tech_stack": {"backend": "fastapi", "frontend": "vue3"},
     },
     {
@@ -43,7 +40,6 @@ DEFAULT_TEMPLATES = [
         "category": "ecommerce",
         "description": "Catalog storefront with product listing, filters and detail pages.",
         "thumbnail_url": "https://placehold.co/600x400?text=Shop+Catalog",
-        "code_archive_url": "s3://site-templates/shop-catalog.tar.gz",
         "tech_stack": {"backend": "fastapi", "frontend": "vue3"},
     },
     {
@@ -52,7 +48,6 @@ DEFAULT_TEMPLATES = [
         "category": "portfolio",
         "description": "Visual portfolio template for agencies and creators.",
         "thumbnail_url": "https://placehold.co/600x400?text=Portfolio+Studio",
-        "code_archive_url": "s3://site-templates/portfolio-studio.tar.gz",
         "tech_stack": {"backend": "fastapi", "frontend": "vue3"},
     },
 ]

@@ -6,20 +6,24 @@ import signal
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
-from urllib.parse import quote, urlsplit, urlunsplit
+from typing import Any, Iterator
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 from fastapi import HTTPException
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.metrics import active_sites_total
+from backend.services.execution_trace_service import redact_execution_text
 from backend.utils.validation import ensure_site_id
 
 from backend.models import Site, SiteStatus, Template
+from backend.services.site_scaffold_service import python_vue_site_config, site_scaffold_service
 
 SITE_PORT_START = int(os.getenv("SUB_SITE_PORT_START", "19100"))
 SITE_PORT_END = int(os.getenv("SUB_SITE_PORT_END", "19999"))
@@ -35,89 +39,6 @@ DEFAULT_SITE_DATA = {
     "notes": ["初始生成：v2 backend scaffold"],
 }
 
-DEFAULT_DOCS_README = """# Project Docs
-
-本目录用于沉淀需求、设计说明和模块文档。
-
-- 新需求会默认记录到 `requirements.md`
-- AI 完成修改任务后，应按模块整理本目录下的文档
-"""
-
-DEFAULT_BACKEND_APP = """import json
-from pathlib import Path
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_FILE = BASE_DIR / "backend" / "site_data.json"
-
-app = FastAPI(title="新网站")
-app.mount("/assets", StaticFiles(directory=str(BASE_DIR / "frontend")), name="assets")
-
-
-@app.get("/api/info")
-def get_info():
-    if not DATA_FILE.exists():
-        return {"title": "新网站", "requirement": "", "notes": []}
-    return json.loads(DATA_FILE.read_text(encoding="utf-8"))
-
-
-@app.get("/{path:path}")
-def serve_frontend(path: str):
-    return FileResponse(str(BASE_DIR / "frontend" / "index.html"))
-"""
-
-DEFAULT_FRONTEND_HTML = """<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>新网站</title>
-  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/axios@1.7.9/dist/axios.min.js"></script>
-  <style>
-    :root { --bg: #f4f7fb; --card: #ffffff; --text: #213547; --brand: #0e7a7a; }
-    body { margin: 0; font-family: "PingFang SC", "Microsoft YaHei", sans-serif; background: linear-gradient(135deg, #eef6ff 0%, #f5fffa 100%); color: var(--text); }
-    .wrap { max-width: 980px; margin: 32px auto; padding: 0 16px; }
-    .card { background: var(--card); border-radius: 16px; padding: 24px; box-shadow: 0 10px 30px rgba(16, 40, 63, .08); }
-    h1 { margin: 0 0 12px; font-size: 32px; }
-    .desc { color: #567083; margin: 0 0 18px; line-height: 1.7; }
-    .tags { display: flex; gap: 10px; flex-wrap: wrap; }
-    .tag { background: #e8f5f5; color: #0f6d6d; border-radius: 999px; padding: 6px 12px; font-size: 13px; }
-  </style>
-</head>
-<body>
-  <div id="app" class="wrap">
-    <div class="card">
-      <h1>{{ info.title }}</h1>
-      <p class="desc">网站已创建成功。你可以在管理页继续输入优化要求，系统会自动更新并重启网站。</p>
-      <div class="tags">
-        <span class="tag">默认后端：Python</span>
-        <span class="tag">默认前端：Vue</span>
-        <span class="tag">支持持续调整</span>
-      </div>
-    </div>
-  </div>
-  <script>
-    const { createApp } = Vue;
-    createApp({
-      data() {
-        return { info: { title: '新网站', requirement: '', notes: [] } };
-      },
-      async mounted() {
-        const prefix = window.location.pathname.startsWith('/sites/')
-          ? window.location.pathname.replace(/\\/+$/, '')
-          : '';
-        const r = await axios.get(`${prefix}/api/info`);
-        this.info = r.data;
-      }
-    }).mount('#app');
-  </script>
-</body>
-</html>
-"""
-
 
 class SiteService:
     def site_root(self, site_id: str) -> Path:
@@ -130,31 +51,51 @@ class SiteService:
         return self.site_root(site_id) / ".np"
 
     def _ensure_docs_structure(self, root: Path) -> None:
-        docs_dir = root / "docs"
-        docs_dir.mkdir(parents=True, exist_ok=True)
-        readme_file = docs_dir / "README.md"
-        if not readme_file.exists():
-            readme_file.write_text(DEFAULT_DOCS_README, encoding="utf-8")
-
-        legacy_requirements = root / "REQUIREMENTS.md"
-        requirements_file = docs_dir / "requirements.md"
-        if legacy_requirements.exists():
-            if not requirements_file.exists() or not requirements_file.read_text(encoding="utf-8").strip():
-                requirements_file.write_text(legacy_requirements.read_text(encoding="utf-8"), encoding="utf-8")
-            legacy_requirements.unlink()
+        site_scaffold_service.ensure_support_dirs(root)
 
     def _ensure_np_structure(self, root: Path) -> None:
-        workflows_root = root / ".np" / "workflows"
-        (workflows_root / "runs").mkdir(parents=True, exist_ok=True)
-        (workflows_root / "current").mkdir(parents=True, exist_ok=True)
-        (workflows_root / "history").mkdir(parents=True, exist_ok=True)
+        site_scaffold_service.ensure_support_dirs(root)
+
+    def resolve_site_root(self, site: Site) -> Path:
+        if getattr(site, "project_id", None):
+            from backend.services.project_service import project_service
+
+            return project_service.repo_root(str(site.project_id), site.name)
+        return self.site_root(site.site_id)
+
+    def ensure_support_dirs(self, root: Path) -> Path:
+        return site_scaffold_service.ensure_existing_site_support(root)
+
+    def initialize_blank_site(self, root: Path) -> Path:
+        return site_scaffold_service.initialize_python_vue_site(root)
 
     def requirements_file(self, site_id: str) -> Path:
         root = self.ensure_site_structure(site_id)
         self._ensure_docs_structure(root)
         return root / "docs" / "requirements.md"
 
+    @staticmethod
+    def sanitize_git_url(git_url: str) -> str:
+        parts = urlsplit(str(git_url or "").strip())
+        if parts.scheme not in {"http", "https"} or not parts.hostname:
+            return str(git_url or "").strip()
+        netloc = parts.hostname
+        if parts.port:
+            netloc = f"{netloc}:{parts.port}"
+        return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+    @staticmethod
+    def git_url_credentials(git_url: str) -> tuple[str, str]:
+        parts = urlsplit(str(git_url or "").strip())
+        if parts.scheme not in {"http", "https"}:
+            return "", ""
+        return unquote(parts.username or ""), unquote(parts.password or "")
+
     def _build_authenticated_git_url(self, git_url: str, username: str | None, password: str | None) -> str:
+        embedded_username, embedded_password = self.git_url_credentials(git_url)
+        username = username or embedded_username
+        password = password or embedded_password
+        git_url = self.sanitize_git_url(git_url)
         if not username and not password:
             return git_url
         if password and not username:
@@ -169,6 +110,29 @@ class SiteService:
         if parts.port:
             netloc = f"{netloc}:{parts.port}"
         return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+    @contextmanager
+    def git_network_env(self, username: str = "", password: str = "") -> Iterator[dict[str, str]]:
+        with tempfile.TemporaryDirectory(prefix="nextproject-git-auth-") as temp_dir:
+            askpass = Path(temp_dir) / "askpass.sh"
+            askpass.write_text(
+                "#!/bin/sh\n"
+                "case \"$1\" in\n"
+                "  *Username*) printf '%s\\n' \"$NEXT_PROJECT_GIT_USERNAME\" ;;\n"
+                "  *Password*) printf '%s\\n' \"$NEXT_PROJECT_GIT_PASSWORD\" ;;\n"
+                "  *) printf '\\n' ;;\n"
+                "esac\n",
+                encoding="utf-8",
+            )
+            askpass.chmod(0o700)
+            yield {
+                **os.environ,
+                "GIT_ASKPASS": str(askpass),
+                "GIT_ASKPASS_REQUIRE": "force",
+                "GIT_TERMINAL_PROMPT": "0",
+                "NEXT_PROJECT_GIT_USERNAME": str(username or ""),
+                "NEXT_PROJECT_GIT_PASSWORD": str(password or ""),
+            }
 
     def clone_site_repository(
         self,
@@ -188,27 +152,40 @@ class SiteService:
             shutil.rmtree(root, ignore_errors=True)
         root.parent.mkdir(parents=True, exist_ok=True)
 
-        clone_url = self._build_authenticated_git_url(git_url, git_username, git_password)
-        clone_command = [git_bin, "clone"]
+        embedded_username, embedded_password = self.git_url_credentials(git_url)
+        username = git_username or embedded_username
+        password = git_password or embedded_password
+        public_url = self.sanitize_git_url(git_url)
+        clone_command = [git_bin, "-c", "credential.helper=", "clone"]
         if git_branch:
             clone_command.extend(["--branch", git_branch, "--single-branch"])
-        clone_command.extend([clone_url, str(root)])
+        clone_command.extend([public_url, str(root)])
         try:
-            subprocess.run(
-                clone_command,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+            with self.git_network_env(username, password) as network_env:
+                subprocess.run(
+                    clone_command,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    env=network_env,
+                )
         except subprocess.CalledProcessError as exc:
-            error = (exc.stderr or exc.stdout or "git clone failed").strip()
+            error = redact_execution_text((exc.stderr or exc.stdout or "git clone failed").strip())
             raise HTTPException(status_code=400, detail=f"Failed to clone git repository: {error}") from exc
 
         if not (root / ".git").exists():
             raise HTTPException(status_code=400, detail="Cloned repository is missing .git metadata")
 
-        self._ensure_docs_structure(root)
-        self._ensure_np_structure(root)
+        normalized = subprocess.run(
+            [git_bin, "remote", "set-url", "origin", public_url],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+        )
+        if normalized.returncode != 0:
+            raise HTTPException(status_code=400, detail="Failed to normalize cloned repository origin URL")
+
+        self.ensure_support_dirs(root)
         return root
 
     def preview_url_for_site(self, site_id: str) -> str:
@@ -288,38 +265,13 @@ class SiteService:
 
     def ensure_site_structure(self, site_id: str, override_root: Path | None = None) -> Path:
         root = override_root if override_root is not None else self.site_root(site_id)
-        (root / "backend").mkdir(parents=True, exist_ok=True)
-        (root / "frontend").mkdir(parents=True, exist_ok=True)
-        self._ensure_docs_structure(root)
-        self._ensure_np_structure(root)
-        data_file = root / "backend" / "site_data.json"
-        if not data_file.exists():
-            data_file.write_text(json.dumps(DEFAULT_SITE_DATA, ensure_ascii=False, indent=2), encoding="utf-8")
-        app_file = root / "backend" / "app.py"
-        if not app_file.exists():
-            app_file.write_text(DEFAULT_BACKEND_APP, encoding="utf-8")
-        html_file = root / "frontend" / "index.html"
-        if not html_file.exists():
-            html_file.write_text(DEFAULT_FRONTEND_HTML, encoding="utf-8")
-        # Codex 要求在 git 仓库中运行
-        git_bin = shutil.which("git")
-        if not git_bin:
-            raise RuntimeError("git is required in the runtime image to initialize generated site repositories")
-        if not (root / ".git").exists():
-            subprocess.run([git_bin, "init"], cwd=str(root), capture_output=True, check=True)
-            subprocess.run([git_bin, "add", "."], cwd=str(root), capture_output=True, check=True)
-            subprocess.run(
-                [git_bin, "commit", "-m", "Initial site structure", "--allow-empty"],
-                cwd=str(root),
-                capture_output=True,
-                check=True,
-                env={**os.environ, "GIT_AUTHOR_NAME": "NextProject", "GIT_AUTHOR_EMAIL": "bot@nextproject",
-                     "GIT_COMMITTER_NAME": "NextProject", "GIT_COMMITTER_EMAIL": "bot@nextproject"},
-            )
-        return root
+        if root.exists() and (root / "backend" / "app.py").exists():
+            return self.ensure_support_dirs(root)
+        return self.initialize_blank_site(root)
 
-    def load_site_data(self, site_id: str) -> dict[str, Any]:
-        data_file = self.ensure_site_structure(site_id) / "backend" / "site_data.json"
+    def load_site_data(self, site_id: str, override_root: Path | None = None) -> dict[str, Any]:
+        root = self.ensure_support_dirs(override_root) if override_root is not None else self.ensure_site_structure(site_id)
+        data_file = root / "backend" / "site_data.json"
         try:
             data = json.loads(data_file.read_text(encoding="utf-8"))
             if isinstance(data, dict):
@@ -328,9 +280,11 @@ class SiteService:
             pass
         return dict(DEFAULT_SITE_DATA)
 
-    def save_site_data(self, site_id: str, data: dict[str, Any]) -> None:
-        root = self.ensure_site_structure(site_id)
-        (root / "backend" / "site_data.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    def save_site_data(self, site_id: str, data: dict[str, Any], override_root: Path | None = None) -> None:
+        root = self.ensure_support_dirs(override_root) if override_root is not None else self.ensure_site_structure(site_id)
+        data_dir = root / "backend"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        (data_dir / "site_data.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _next_port(self, sites: list[Site]) -> int:
         used = {int(site.port) for site in sites if getattr(site, "port", None)}
@@ -355,9 +309,9 @@ class SiteService:
         return [sys.executable, "-m", "uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", str(port)], env
 
     def _run_site_process(self, site: Site) -> None:
-        root = self.site_root(site.site_id)
+        root = self.resolve_site_root(site)
         if not root.exists():
-            root = self.ensure_site_structure(site.site_id)
+            root = self.initialize_blank_site(root) if getattr(site, "project_id", None) else self.ensure_site_structure(site.site_id)
         command, env = self._build_site_start_command(site, int(site.port), root)
         proc = subprocess.Popen(
             command,
@@ -400,6 +354,13 @@ class SiteService:
         public_status = getattr(site.status, "value", site.status)
         if self.is_process_running(site.site_id):
             public_status = SiteStatus.RUNNING.value
+        config = dict(getattr(site, "config", {}) or {})
+        git_source = config.get("git_source")
+        if isinstance(git_source, dict):
+            config["git_source"] = {
+                **git_source,
+                "url": redact_execution_text(self.sanitize_git_url(str(git_source.get("url") or ""))),
+            }
         return {
             "id": str(site.id),
             "site_id": site.site_id,
@@ -410,7 +371,8 @@ class SiteService:
             "preview_url": self.preview_url_for_site(site.site_id),
             "internal_url": f"http://127.0.0.1:{site.port}" if getattr(site, "port", None) else None,
             "project_id": str(site.project_id) if getattr(site, "project_id", None) else None,
-            "config": getattr(site, "config", {}) or {},
+            "main_branch": getattr(site, "main_branch", "") or "",
+            "config": config,
             "created_at": getattr(site, "created_at", None).isoformat() if getattr(site, "created_at", None) else None,
         }
 
@@ -486,12 +448,15 @@ class SiteService:
         if git_url:
             site.config = {
                 **(site.config or {}),
+                "source_type": "git",
                 "git_source": {
                     "url": git_url,
                     "username": git_username or "",
                     "branch": git_branch or "",
                 },
             }
+        else:
+            site.config = python_vue_site_config(site.config or {})
         if start_command:
             site.config = {
                 **(site.config or {}),
@@ -545,14 +510,16 @@ class SiteService:
         if not instruction:
             raise HTTPException(status_code=400, detail="instruction is required")
         site = await self.get_site_by_public_id(db, site_id, current_user)
-        data = self.load_site_data(site.site_id)
+        root = self.resolve_site_root(site)
+        data = self.load_site_data(site.site_id, override_root=root)
         data.setdefault("notes", []).append(f"调整：{instruction}")
-        self.save_site_data(site.site_id, data)
+        self.save_site_data(site.site_id, data, override_root=root)
         await self.restart_site(db, site.site_id, current_user)
         return site
 
     async def delete_site(self, db: AsyncSession, site_id: str, current_user: object) -> None:
         site = await self.get_site_by_public_id(db, site_id, current_user)
+        root = self.resolve_site_root(site)
         self._stop_site_process(site.site_id)
         if hasattr(site, "deleted_at"):
             from datetime import datetime, timezone
@@ -561,7 +528,7 @@ class SiteService:
         else:
             await db.delete(site)
         await db.commit()
-        shutil.rmtree(self.site_root(site.site_id), ignore_errors=True)
+        shutil.rmtree(root, ignore_errors=True)
 
     async def next_version_number(self, db: AsyncSession, site_id: object) -> int:
         from backend.models import SiteVersion

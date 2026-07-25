@@ -53,10 +53,11 @@ async def get_site(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     site = await site_service.get_site_by_public_id(db, site_id, current_user)
+    root = site_service.resolve_site_root(site)
     return {
         "ok": True,
         "site": site_service.serialize_site(site),
-        "data": site_service.load_site_data(site.site_id),
+        "data": site_service.load_site_data(site.site_id, override_root=root),
     }
 
 
@@ -100,7 +101,7 @@ async def list_site_files(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     site = await site_service.get_site_by_public_id(db, site_id, current_user)
-    data = site_service.list_site_files(site.site_id, path)
+    data = site_service.list_site_files(site.site_id, path, override_root=site_service.resolve_site_root(site))
     return {"ok": True, **data}
 
 
@@ -112,7 +113,7 @@ async def get_site_file(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     site = await site_service.get_site_by_public_id(db, site_id, current_user)
-    data = site_service.read_site_file(site.site_id, path)
+    data = site_service.read_site_file(site.site_id, path, override_root=site_service.resolve_site_root(site))
     return {"ok": True, **data}
 
 
@@ -123,7 +124,8 @@ async def get_requirements(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     site = await site_service.get_site_by_public_id(db, site_id, current_user)
-    req_file: Path = site_service.requirements_file(site.site_id)
+    root = site_service.ensure_support_dirs(site_service.resolve_site_root(site))
+    req_file: Path = root / "docs" / "requirements.md"
     content = req_file.read_text(encoding="utf-8") if req_file.exists() else ""
     return {"ok": True, "content": content}
 
@@ -139,7 +141,8 @@ async def add_requirement(
     text = (payload.get("content") or "").strip()
     if not text:
         return {"ok": True, "content": ""}
-    req_file: Path = site_service.requirements_file(site.site_id)
+    root = site_service.ensure_support_dirs(site_service.resolve_site_root(site))
+    req_file: Path = root / "docs" / "requirements.md"
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
     entry = f"\n## {ts}\n{text}\n"
     if not req_file.exists():

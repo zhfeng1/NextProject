@@ -52,7 +52,7 @@ async def get_site(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     site = await site_service.get_site_by_public_id(db, site_id, current_user)
-    data = site_service.load_site_data(site.site_id)
+    data = site_service.load_site_data(site.site_id, override_root=site_service.resolve_site_root(site))
     return {"ok": True, "site": site_service.serialize_site(site), "data": data}
 
 
@@ -84,7 +84,7 @@ async def list_site_files(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     site = await site_service.get_site_by_public_id(db, site_id, current_user)
-    data = site_service.list_site_files(site.site_id, path)
+    data = site_service.list_site_files(site.site_id, path, override_root=site_service.resolve_site_root(site))
     return {"ok": True, **data}
 
 
@@ -96,7 +96,7 @@ async def get_site_file(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     site = await site_service.get_site_by_public_id(db, site_id, current_user)
-    data = site_service.read_site_file(site.site_id, path)
+    data = site_service.read_site_file(site.site_id, path, override_root=site_service.resolve_site_root(site))
     return {"ok": True, **data}
 
 

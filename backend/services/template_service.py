@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models import Template
 from backend.services.site_service import site_service
-from backend.utils.minio import download_object
 
 
 class TemplateService:
@@ -20,7 +19,6 @@ class TemplateService:
             "category": getattr(template, "category", None),
             "description": getattr(template, "description", None),
             "thumbnail_url": getattr(template, "thumbnail_url", None),
-            "code_archive_url": getattr(template, "code_archive_url", None),
             "tech_stack": getattr(template, "tech_stack", None),
             "usage_count": getattr(template, "usage_count", 0),
             "rating": float(getattr(template, "rating", 0.0) or 0.0),
@@ -63,11 +61,6 @@ class TemplateService:
             auto_start=False,
             config={"tech_stack": getattr(template, "tech_stack", {}) or {}},
         )
-        if getattr(template, "code_archive_url", None):
-            archive_path = download_object(template.code_archive_url)
-            notes = site_service.load_site_data(site.site_id)
-            notes.setdefault("notes", []).append(f"模板代码来源：{archive_path}")
-            site_service.save_site_data(site.site_id, notes)
         template.usage_count = int(getattr(template, "usage_count", 0) or 0) + 1
         await db.commit()
         await db.refresh(site)

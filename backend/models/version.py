@@ -10,12 +10,15 @@ from backend.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 class SiteVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "site_versions"
-    __table_args__ = (UniqueConstraint("site_id", "version_number", name="uq_site_version"),)
+    __table_args__ = (
+        UniqueConstraint("site_id", "version_number", name="uq_site_version"),
+        UniqueConstraint("site_id", "commit_sha", name="uq_site_version_commit"),
+    )
 
     site_id: Mapped[str] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False, index=True)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     parent_version_id: Mapped[str | None] = mapped_column(ForeignKey("site_versions.id"), default=None)
-    snapshot_url: Mapped[str] = mapped_column(String(500), default="")
+    commit_sha: Mapped[str] = mapped_column(String(40), nullable=False)
     commit_message: Mapped[str] = mapped_column(Text, default="")
     diff_summary: Mapped[dict] = mapped_column(SQLITE_JSON, default=dict)
     created_by: Mapped[str | None] = mapped_column(String(36), default=None)

@@ -14,7 +14,6 @@ class Template(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     category: Mapped[str] = mapped_column(String(50), default="landing")
     description: Mapped[str] = mapped_column(Text, default="")
     thumbnail_url: Mapped[str] = mapped_column(String(500), default="")
-    code_archive_url: Mapped[str] = mapped_column(String(500), default="")
     tech_stack: Mapped[dict] = mapped_column(SQLITE_JSON, default=dict)
     usage_count: Mapped[int] = mapped_column(Integer, default=0)
     rating: Mapped[float] = mapped_column(Float, default=0.0)

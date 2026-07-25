@@ -56,6 +56,9 @@ async def test_create_site_creates_docs_directory(
     site_root = app_module.site_service.site_root("docs-site")
     assert (site_root / "docs").is_dir()
     assert (site_root / "docs" / "README.md").exists()
+    assert (site_root / "backend" / "app.py").exists()
+    assert (site_root / "frontend" / "index.html").exists()
+    assert not (site_root / ".openai").exists()
 
 
 @pytest.mark.asyncio
@@ -122,18 +125,18 @@ async def test_site_file_browser_lists_and_reads_files(
     list_response = await client.get("/api/v2/sites/browse-site/files", headers=auth_headers)
     assert list_response.status_code == 200
     entries = list_response.json()["entries"]
-    assert any(item["path"] == "frontend" and item["type"] == "directory" for item in entries)
     assert any(item["path"] == "backend" and item["type"] == "directory" for item in entries)
+    assert any(item["path"] == "frontend" and item["type"] == "directory" for item in entries)
 
     file_response = await client.get(
         "/api/v2/sites/browse-site/file",
-        params={"path": "frontend/index.html"},
+        params={"path": "backend/app.py"},
         headers=auth_headers,
     )
     assert file_response.status_code == 200
     payload = file_response.json()
-    assert payload["path"] == "frontend/index.html"
-    assert "<!doctype html>" in payload["content"]
+    assert payload["path"] == "backend/app.py"
+    assert "FastAPI" in payload["content"]
     assert payload["binary"] is False
 
 

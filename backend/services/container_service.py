@@ -26,7 +26,11 @@ CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8080"]
     async def create_site_container(self, site) -> str:
         if not docker_available():
             raise RuntimeError("Docker is not available")
-        root = site_service.ensure_site_structure(site.site_id)
+        root = site_service.resolve_site_root(site)
+        if not root.exists():
+            root = site_service.initialize_blank_site(root)
+        else:
+            site_service.ensure_support_dirs(root)
         dockerfile = self._generate_dockerfile(root)
         image_tag = f"nextproject/site-{site.site_id}:latest"
         build_image(root, dockerfile, image_tag)

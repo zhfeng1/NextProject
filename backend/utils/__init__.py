@@ -6,13 +6,11 @@ from backend.utils.docker import (
     remove_image,
     run_container,
 )
-from backend.utils.minio import download_object, upload_file
 from backend.utils.validation import ensure_site_id, generate_site_slug, slugify
 
 __all__ = [
     "build_image",
     "docker_available",
-    "download_object",
     "ensure_site_id",
     "generate_site_slug",
     "inspect_container_health",
@@ -20,5 +18,4 @@ __all__ = [
     "remove_image",
     "run_container",
     "slugify",
-    "upload_file",
 ]

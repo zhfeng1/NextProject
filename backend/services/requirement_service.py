@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.models.site import Site
 from backend.models.requirement import SiteRequirementEvent, SiteRequirementSnapshot
 from backend.services.site_service import site_service
 
@@ -91,10 +92,13 @@ class RequirementService:
             
         # Optional: Save to file system docs/REQUIREMENTS.md
         try:
-            site_root = site_service.site_root(site_id)
+            site = await db.get(Site, site_id)
+            if site is None:
+                raise RuntimeError("Site not found")
+            site_root = site_service.resolve_site_root(site)
             docs_dir = site_root / "docs"
             docs_dir.mkdir(parents=True, exist_ok=True)
-            req_file = docs_dir / "REQUIREMENTS.md"
+            req_file = docs_dir / "requirements.md"
             req_file.write_text(content, encoding="utf-8")
         except Exception:
             pass # ignore fs errors

@@ -36,10 +36,8 @@ class SiteDeployConfigPayload(BaseModel):
 class SiteProviderConfigPayload(BaseModel):
     codex_cmd: str = ""
     claude_cmd: str = ""
-    gemini_cmd: str = ""
     codex_auth_cmd: str = ""
     claude_auth_cmd: str = ""
-    gemini_auth_cmd: str = ""
 
 
 class AppConfigPayload(BaseModel):
@@ -52,4 +50,3 @@ class AppConfigPayload(BaseModel):
     codex_redirect_uri: str = ""
     codex_access_token: str = ""
     codex_mcp_url: str = ""
-
