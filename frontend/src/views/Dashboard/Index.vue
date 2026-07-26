@@ -6,6 +6,7 @@ import { formatDate } from '@/utils/format'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import BuildLogModal from '@/components/BuildLogModal.vue'
+import { PROGRAMMING_TOOL_IDS, programmingToolLabel } from '@/api/programmingTools'
 import {
   Bot,
   CheckCircle2,
@@ -15,7 +16,7 @@ import {
   Gauge,
   Globe,
   ListTodo,
-  Sparkles,
+  MessagesSquare,
 } from 'lucide-vue-next'
 
 type OverviewStats = {
@@ -37,11 +38,12 @@ type OverviewStats = {
     canceled: number
     success_rate: number
   }
-  providers: { codex: number; claude_code: number; gemini_cli: number }
+  providers: Record<string, number>
   tokens: { tracked: boolean; tracked_tasks: number; input: number; output: number; total: number }
   recent_tasks: Array<{
     id: string
     site_id: string
+    project_id?: string
     provider: string
     task_type: string
     status: string
@@ -64,7 +66,7 @@ const stats = ref<OverviewStats>({
   projects: { total: 0 },
   sites: { total: 0, running: 0, stopped: 0, building: 0, error: 0, git_linked: 0 },
   tasks: { total: 0, queued: 0, running: 0, success: 0, failed: 0, canceled: 0, success_rate: 0 },
-  providers: { codex: 0, claude_code: 0, gemini_cli: 0 },
+  providers: {},
   tokens: { tracked: false, tracked_tasks: 0, input: 0, output: 0, total: 0 },
   recent_tasks: [],
   recent_sites: [],
@@ -90,6 +92,24 @@ const primaryMetric = computed(() => ({
   queued: stats.value.tasks.queued,
 }))
 
+const providerBars = computed(() => {
+  const items = PROGRAMMING_TOOL_IDS.map(id => ({
+    id,
+    label: programmingToolLabel(id),
+    value: Number(stats.value.providers[id] || 0),
+  }))
+  const max = Math.max(...items.map((item) => item.value), 1)
+  return items.map(item => ({ ...item, pct: Math.round((item.value / max) * 100) }))
+})
+
+const visibleProviderCalls = computed(() => providerBars.value.reduce((total, item) => total + item.value, 0))
+const visibleProviderSummary = computed(() => {
+  const used = providerBars.value.filter(item => item.value > 0)
+  return used.length
+    ? used.map(item => `${item.label} ${item.value}`).join(' · ')
+    : '暂无可见工具调用'
+})
+
 const overviewCards = computed(() => [
   {
     title: '项目总数',
@@ -107,8 +127,8 @@ const overviewCards = computed(() => [
   },
   {
     title: 'AI 调用次数',
-    value: stats.value.providers.codex + stats.value.providers.claude_code + stats.value.providers.gemini_cli,
-    helper: `Codex ${stats.value.providers.codex} · Claude ${stats.value.providers.claude_code}`,
+    value: visibleProviderCalls.value,
+    helper: visibleProviderSummary.value,
     icon: Bot,
     tone: 'success' as const,
   },
@@ -120,16 +140,6 @@ const overviewCards = computed(() => [
     tone: 'primary' as const,
   },
 ])
-
-const providerBars = computed(() => {
-  const items = [
-    { label: 'Codex', value: stats.value.providers.codex },
-    { label: 'Claude Code', value: stats.value.providers.claude_code },
-    { label: 'Gemini', value: stats.value.providers.gemini_cli },
-  ]
-  const max = Math.max(...items.map((i) => i.value), 1)
-  return items.map((i) => ({ ...i, pct: Math.round((i.value / max) * 100) }))
-})
 
 const taskStatusItems = computed(() => [
   { label: '排队', value: stats.value.tasks.queued, tone: 'muted' as const },
@@ -144,10 +154,7 @@ function formatNumber(value: number) {
 }
 
 function providerLabel(provider: string) {
-  if (provider === 'claude_code') return 'Claude Code'
-  if (provider === 'gemini_cli') return 'Gemini'
-  if (provider === 'codex') return 'Codex'
-  return provider || 'System'
+  return programmingToolLabel(provider)
 }
 
 function taskStatusTone(status: string): 'muted' | 'warning' | 'success' | 'danger' {
@@ -219,12 +226,8 @@ onMounted(async () => {
                 管理项目
               </Button>
               <Button variant="outline" @click="router.push('/tasks')">
-                <ListTodo class="size-4" />
-                查看任务
-              </Button>
-              <Button variant="outline" @click="router.push('/templates')">
-                <Sparkles class="size-4" />
-                模板市场
+                <MessagesSquare class="size-4" />
+                开发会话
               </Button>
             </div>
           </div>
@@ -339,10 +342,10 @@ onMounted(async () => {
             </div>
             <div class="rounded-lg border bg-muted/30 p-3.5">
               <div class="flex items-center gap-2 text-xs text-muted-foreground">
-                <Sparkles class="size-3.5" />
-                模板创建
+                <Globe class="size-3.5" />
+                运行站点
               </div>
-              <div class="stat-num mt-1.5 text-2xl text-foreground">{{ formatNumber(stats.templates.linked_sites) }}</div>
+              <div class="stat-num mt-1.5 text-2xl text-foreground">{{ formatNumber(stats.sites.running) }}</div>
             </div>
           </div>
 
@@ -407,7 +410,7 @@ onMounted(async () => {
               :key="task.id"
               type="button"
               class="flex w-full items-center gap-3 py-2.5 text-left transition-colors hover:bg-muted/40"
-              @click="router.push('/tasks')"
+              @click="router.push(task.project_id ? { path: '/tasks', query: { project_id: task.project_id } } : '/tasks')"
             >
               <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                 <Bot class="size-4" />

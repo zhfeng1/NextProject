@@ -24,8 +24,7 @@ import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   Home,
-  LayoutTemplate,
-  ListTodo,
+  MessagesSquare,
   Settings2,
   LogOut,
   PlugZap,
@@ -42,8 +41,8 @@ const router = useRouter()
 const authStore = useAuthStore()
 const { theme, toggle } = useTheme()
 
-const logout = () => {
-  authStore.logout()
+const logout = async () => {
+  await authStore.logout()
   router.push('/login')
 }
 
@@ -58,8 +57,7 @@ const navGroups = [
     label: '项目管理',
     items: [
       { label: '我的项目', to: '/projects', icon: FolderKanban, match: (p: string) => p === '/projects' || p.startsWith('/projects/') },
-      { label: '任务看板', to: '/tasks', icon: ListTodo, match: (p: string) => p === '/tasks' },
-      { label: '模板市场', to: '/templates', icon: LayoutTemplate, match: (p: string) => p === '/templates' },
+      { label: '开发会话', to: '/tasks', icon: MessagesSquare, match: (p: string) => p === '/tasks' },
     ],
   },
   {
@@ -95,7 +93,7 @@ onMounted(async () => {
     try {
       await authStore.fetchUser()
     } catch {
-      authStore.logout()
+      authStore.clearSession()
       router.replace('/')
     }
   }
@@ -111,11 +109,7 @@ onMounted(async () => {
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" as-child>
               <router-link to="/">
-                <div
-                  class="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground"
-                >
-                  <span class="font-mono-data text-sm font-bold leading-none">N</span>
-                </div>
+                <img src="/favicon.svg" alt="NextProject" class="size-8 shrink-0 rounded-lg" />
                 <div class="grid flex-1 text-left leading-none">
                   <span class="truncate text-sm font-semibold">NextProject</span>
                   <span class="truncate text-xs text-muted-foreground">AI 工作流控制台</span>
@@ -187,6 +181,7 @@ onMounted(async () => {
           <span class="text-muted-foreground/40">/</span>
           <span class="font-medium text-foreground">{{ activeRouteName }}</span>
         </nav>
+        <div id="app-route-actions" class="flex min-w-0 flex-1 items-center gap-2"></div>
 
         <div class="ml-auto flex items-center gap-1.5">
           <Button variant="ghost" size="icon-sm" class="text-muted-foreground" aria-label="切换主题" @click="toggle">

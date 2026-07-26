@@ -71,8 +71,7 @@ const routes: RouteRecordRaw[] = [
       },
       {
         path: 'templates',
-        name: 'TemplateMarket',
-        component: () => import('@/views/Templates/TemplateMarket.vue'),
+        redirect: '/',
       },
       {
         path: 'tasks',
