@@ -7,7 +7,9 @@
     <mapping directory="$PROJECT_DIR$/generated_sites/58506bb9-c6d6-43d5-9b15-7dd227fd1aba" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/generated_sites/6640ad15-239f-4128-b4a8-0b7666b57db9" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/generated_sites/9241f162-b75a-41bd-a15c-e9adb4b7deb2" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/generated_sites/9b9f9daa-0fb8-4fb5-9a6f-8aa35118de8c/app" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/generated_sites/ce5c65db-7710-4ca2-be49-562226339350" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/generated_sites/d7434e87-22f3-49dc-99fc-85b9cbe36a1b/quotahub" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/generated_sites/site" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/generated_sites/site-1" vcs="Git" />
   </component>

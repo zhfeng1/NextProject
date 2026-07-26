@@ -68,7 +68,7 @@
 | **前端** | Vue 3 (CDN) | Vue 3 + TypeScript + Vite + Pinia |
 | **数据库** | SQLite | PostgreSQL 15 + Redis 7 |
 | **任务队列** | 内存队列 | Celery + Redis |
-| **对象存储** | 本地磁盘 | MinIO |
+| **站点版本** | 目录快照 | Git Commit + 数字版本 |
 | **部署方式** | Docker 进程 | Kubernetes (Apollo) |
 | **监控** | 无 | Prometheus + Grafana |
 
@@ -88,7 +88,7 @@
 ### 已实现（v1.0）
 
 - ✅ 多子网站管理（增删查改）
-- ✅ AI 开发任务（Codex / Claude / Gemini）
+- ✅ AI 开发任务（Codex / Claude Code）
 - ✅ Playwright 自动化测试
 - ✅ 本地 + Apollo 部署
 - ✅ 实时任务日志
