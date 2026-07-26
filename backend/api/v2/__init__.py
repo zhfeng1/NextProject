@@ -2,6 +2,7 @@ from backend.api.v2.auth import router as auth_router
 from backend.api.v2.conversations import router as conversations_router
 from backend.api.v2.deploy import router as deploy_router
 from backend.api.v2.mcp import router as mcp_router
+from backend.api.v2.programming_tools import router as programming_tools_router
 from backend.api.v2.skills import router as skills_router
 from backend.api.v2.sites import router as sites_router
 from backend.api.v2.tasks import router as tasks_router
@@ -14,6 +15,7 @@ __all__ = [
     "conversations_router",
     "deploy_router",
     "mcp_router",
+    "programming_tools_router",
     "sites_router",
     "skills_router",
     "tasks_router",

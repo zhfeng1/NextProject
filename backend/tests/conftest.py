@@ -35,12 +35,9 @@ async def app_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
     monkeypatch.setenv("SYNC_DATABASE_URL", f"sqlite:///{db_path}")
     monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/15")
+    monkeypatch.setenv("AUTH_SESSION_BACKEND", "memory")
     monkeypatch.setenv("CELERY_BROKER_URL", "redis://localhost:6379/15")
     monkeypatch.setenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/15")
-    monkeypatch.setenv("MINIO_ENDPOINT", "minio:9000")
-    monkeypatch.setenv("MINIO_ACCESS_KEY", "minioadmin")
-    monkeypatch.setenv("MINIO_SECRET_KEY", "minioadmin2025")
-    monkeypatch.setenv("MINIO_SECURE", "false")
     monkeypatch.setenv("SECRET_KEY", "test-secret-key-at-least-32-characters")
     monkeypatch.setenv("GENERATED_SITES_ROOT", str(generated_sites_root))
     monkeypatch.setenv("PLAYWRIGHT_BASE_URL", "http://test")
@@ -74,3 +71,29 @@ async def auth_headers(client: httpx.AsyncClient) -> dict[str, str]:
     )
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest_asyncio.fixture
+async def codex_provider(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+):
+    async def create(project_id: str) -> dict[str, object]:
+        response = await client.post(
+            "/api/v2/providers",
+            json={
+                "name": "Test Codex Provider",
+                "api_key": "sk-test-codex-provider-key",
+                "models": ["gpt-5-codex"],
+                "formats": ["responses"],
+                "enabled_formats": ["responses"],
+                "scope_type": "project",
+                "project_id": project_id,
+                "is_default": True,
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200, response.text
+        return response.json()["provider"]
+
+    return create

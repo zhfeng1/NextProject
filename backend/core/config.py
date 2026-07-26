@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     )
     sync_database_url: str | None = Field(default=None, alias="SYNC_DATABASE_URL")
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
+    auth_session_backend: Literal["redis", "memory"] = Field(default="redis", alias="AUTH_SESSION_BACKEND")
+    auth_session_key_prefix: str = Field(default="nextproject:auth", alias="AUTH_SESSION_KEY_PREFIX")
     celery_broker_url: str = Field(default="redis://localhost:6379/0", alias="CELERY_BROKER_URL")
     celery_result_backend: str = Field(default="redis://localhost:6379/1", alias="CELERY_RESULT_BACKEND")
 
@@ -38,12 +40,6 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
 
-    minio_endpoint: str = Field(default="localhost:9000", alias="MINIO_ENDPOINT")
-    minio_access_key: str = Field(default="minioadmin", alias="MINIO_ACCESS_KEY")
-    minio_secret_key: str = Field(default="minioadmin2025", alias="MINIO_SECRET_KEY")
-    minio_secure: bool = Field(default=False, alias="MINIO_SECURE")
-    minio_bucket_templates: str = "site-templates"
-    minio_bucket_versions: str = "site-versions"
     cors_allow_origins: str = Field(
         default="http://localhost:3000,http://127.0.0.1:3000,http://localhost:18080,http://127.0.0.1:18080",
         alias="CORS_ALLOW_ORIGINS",
@@ -54,6 +50,16 @@ class Settings(BaseSettings):
 
     code_mcp_bridge_url: str = Field(default="http://codex-mcp:8090", alias="CODEX_MCP_BRIDGE_URL")
     claude_mcp_bridge_url: str = Field(default="http://claude-code-mcp:8091", alias="CLAUDE_MCP_BRIDGE_URL")
+    programming_tool_adapter_token: str = Field(default="", alias="PROGRAMMING_TOOL_ADAPTER_TOKEN")
+    codex_adapter_url: str = Field(default="http://codex-adapter:8090", alias="CODEX_ADAPTER_URL")
+    claude_code_adapter_url: str = Field(default="http://claude-code-adapter:8091", alias="CLAUDE_CODE_ADAPTER_URL")
+    codebuddy_adapter_url: str = Field(default="http://codebuddy-adapter:8092", alias="CODEBUDDY_ADAPTER_URL")
+    opencode_adapter_url: str = Field(default="http://opencode-adapter:8093", alias="OPENCODE_ADAPTER_URL")
+    kimi_code_adapter_url: str = Field(default="http://kimi-code-adapter:8094", alias="KIMI_CODE_ADAPTER_URL")
+    programming_session_root: Path = Field(
+        default=Path("/shared/programming_sessions"),
+        alias="PROGRAMMING_SESSION_ROOT",
+    )
     llm_dialog_log_enabled: bool = Field(default=False, alias="LLM_DIALOG_LOG_ENABLED")
     llm_dialog_log_max_chars: int = Field(default=4000, alias="LLM_DIALOG_LOG_MAX_CHARS")
 
@@ -62,10 +68,8 @@ class Settings(BaseSettings):
 
     codex_cmd: str = Field(default="codex", alias="CODEX_CMD")
     claude_cmd: str = Field(default="claude", alias="CLAUDE_CMD")
-    gemini_cmd: str = Field(default="gemini", alias="GEMINI_CMD")
     codex_auth_cmd: str = Field(default="codex login --device-auth", alias="CODEX_AUTH_CMD")
     claude_auth_cmd: str = Field(default="claude login", alias="CLAUDE_AUTH_CMD")
-    gemini_auth_cmd: str = Field(default="gemini auth login", alias="GEMINI_AUTH_CMD")
 
     playwright_base_url: str = Field(default="http://127.0.0.1:8080", alias="PLAYWRIGHT_BASE_URL")
     default_task_timeout_seconds: int = 1800
@@ -77,7 +81,7 @@ class Settings(BaseSettings):
     api_version_prefix: str = "/api/v2"
     metrics_path: str = "/metrics"
 
-    provider_list: tuple[str, ...] = ("codex", "claude_code", "gemini_cli")
+    provider_list: tuple[str, ...] = ("codex", "claude_code", "codebuddy", "opencode", "kimi_code")
     supported_task_types: tuple[str, ...] = (
         "develop_code",
         "test_local_playwright",

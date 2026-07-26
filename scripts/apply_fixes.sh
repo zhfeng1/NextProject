@@ -21,10 +21,6 @@ mkdir -p k8s/base
 mkdir -p k8s/overlays/dev
 mkdir -p k8s/overlays/prod
 
-if ! grep -q '^minio==' main_service/requirements.txt; then
-  echo 'minio==7.2.10' >> main_service/requirements.txt
-fi
-
 cat > pytest.ini <<'EOF'
 [pytest]
 testpaths = backend/tests
@@ -82,7 +78,6 @@ echo "已完成："
 echo "1. 测试目录与 pytest 配置"
 echo "2. Grafana provisioning 配置"
 echo "3. K8s 目录骨架"
-echo "4. MinIO 依赖声明"
 echo ""
 echo "下一步："
 echo "1. 生成并写入 SECRET_KEY："

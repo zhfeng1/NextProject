@@ -204,10 +204,8 @@ async def migrate(sqlite_path: Path, truncate: bool = False) -> MigrationStats:
                     site_id=mapped_site_id,
                     codex_cmd=row["codex_cmd"] or "",
                     claude_cmd=row["claude_cmd"] or "",
-                    gemini_cmd=row["gemini_cmd"] or "",
                     codex_auth_cmd=row["codex_auth_cmd"] or "",
                     claude_auth_cmd=row["claude_auth_cmd"] or "",
-                    gemini_auth_cmd=row["gemini_auth_cmd"] or "",
                     updated_at=parse_datetime(row["updated_at"]),
                 )
             )

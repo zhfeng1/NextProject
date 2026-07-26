@@ -42,8 +42,7 @@ COPY main_service/package.json /app/package.json
 COPY main_service/package-lock.json /app/package-lock.json
 COPY scripts/init_agents.py /app/init_agents.py
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --omit=dev --prefer-offline \
-    && npm install -g @openai/codex @anthropic-ai/claude-code --prefer-offline
+    npm ci --omit=dev --prefer-offline
 RUN npx playwright install chromium
 
 COPY main_service/app /app/app
@@ -51,4 +50,4 @@ COPY backend /app/backend
 COPY scripts /app/scripts
 
 EXPOSE 8080
-CMD ["sh", "-c", "python /app/init_agents.py && uvicorn backend.main:app --host 0.0.0.0 --port 8080"]
+CMD ["sh", "-c", "python /app/scripts/migrate_database.py && python /app/init_agents.py && uvicorn backend.main:app --host 0.0.0.0 --port 8080"]

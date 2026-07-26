@@ -3,13 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
-import shlex
-import subprocess
-import threading
+import os
 import uuid
-from collections import deque
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -22,6 +17,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api import api_router
+from backend.api.deps import get_current_user, require_role
 from backend.core.config import ROOT_DIR, get_settings
 from backend.core.database import AsyncSessionLocal, engine, get_db
 from backend.core.metrics import active_sites_total, prometheus_middleware, render_metrics
@@ -36,11 +32,12 @@ from backend.models import (
     SiteProviderConfig,
     Template,
     User,
+    UserLLMProvider,
 )
 from backend.services.deploy_service import deploy_service
+from backend.services.programming_tool_service import programming_tool_service
 from backend.services.site_service import site_service
-from backend.services.task_service import task_service
-from backend.utils.minio import minio_client
+from backend.services.task_service import ADAPTER_URLS, task_service
 
 
 settings = get_settings()
@@ -60,26 +57,6 @@ app.add_middleware(
 )
 app.middleware("http")(prometheus_middleware)
 app.include_router(api_router)
-
-
-PROVIDER_AUTH_FILES = {
-    "codex": "/root/.codex/auth.json",
-    "claude_code": "/root/.config/claude-code/auth.json",
-    "gemini_cli": "/root/.config/gemini/auth.json",
-}
-provider_auth_locks = {provider: threading.Lock() for provider in settings.provider_list}
-provider_auth_processes: dict[str, subprocess.Popen[str] | None] = {provider: None for provider in settings.provider_list}
-provider_auth_logs: dict[str, deque[str]] = {provider: deque(maxlen=200) for provider in settings.provider_list}
-
-
-def now_iso() -> str:
-    from datetime import datetime, timezone
-
-    return datetime.now(timezone.utc).isoformat()
-
-
-def append_provider_auth_log(provider: str, line: str) -> None:
-    provider_auth_logs[provider].append(f"[{now_iso()}] {line.rstrip()}")
 
 
 async def _add_column_if_missing(conn: Any, table: str, column: str, col_def: str) -> None:
@@ -125,10 +102,10 @@ async def ensure_bootstrap_data() -> None:
             await _drop_table_if_exists(conn, legacy_table)
         # Idempotent column migrations
         await _add_column_if_missing(conn, "user_configs", "claude_api_key", "TEXT NOT NULL DEFAULT ''")
-        await _add_column_if_missing(conn, "user_configs", "gemini_api_key", "TEXT NOT NULL DEFAULT ''")
         await _add_column_if_missing(conn, "user_llm_providers", "scope_type", "VARCHAR(16) NOT NULL DEFAULT 'global'")
         await _add_column_if_missing(conn, "user_llm_providers", "project_id", "VARCHAR(36)")
         await _add_column_if_missing(conn, "user_llm_providers", "formats_json", "JSON NOT NULL DEFAULT '[]'")
+        await _add_column_if_missing(conn, "user_llm_providers", "enabled_formats_json", "JSON NOT NULL DEFAULT '[]'")
         await _add_column_if_missing(conn, "agent_tasks", "project_id", "VARCHAR(36)")
         await _add_column_if_missing(conn, "agent_tasks", "title", "VARCHAR(255) NOT NULL DEFAULT ''")
         await _add_column_if_missing(conn, "agent_tasks", "description", "TEXT NOT NULL DEFAULT ''")
@@ -137,8 +114,71 @@ async def ensure_bootstrap_data() -> None:
         await _add_column_if_missing(conn, "agent_tasks", "board_status", "VARCHAR(32) NOT NULL DEFAULT 'queued'")
         await _add_column_if_missing(conn, "agent_tasks", "workflow_stages_json", "JSON NOT NULL DEFAULT '[]'")
         await _add_column_if_missing(conn, "agent_tasks", "runtime_config_dir", "VARCHAR(512) NOT NULL DEFAULT ''")
+        await _add_column_if_missing(conn, "agent_tasks", "conversation_id", "VARCHAR(36)")
+        await _add_column_if_missing(conn, "conversations", "project_id", "VARCHAR(36)")
+        await _add_column_if_missing(conn, "conversations", "scope_type", "VARCHAR(16) NOT NULL DEFAULT 'site'")
+        await _add_column_if_missing(conn, "conversations", "repo_ids_json", "JSON NOT NULL DEFAULT '[]'")
+        await _add_column_if_missing(conn, "sites", "main_branch", "VARCHAR(255) NOT NULL DEFAULT ''")
+        await _add_column_if_missing(conn, "conversations", "provider", "VARCHAR(32) NOT NULL DEFAULT 'codex'")
+        await _add_column_if_missing(conn, "conversations", "branch_name", "VARCHAR(255) NOT NULL DEFAULT ''")
+        await _add_column_if_missing(conn, "conversations", "worktree_root", "VARCHAR(512) NOT NULL DEFAULT ''")
+        await _add_column_if_missing(conn, "conversations", "git_repos_json", "JSON NOT NULL DEFAULT '[]'")
+        await _add_column_if_missing(conn, "conversations", "diff_snapshot_json", "JSON NOT NULL DEFAULT '{}'")
+        await _add_column_if_missing(conn, "conversations", "completion_status", "VARCHAR(20) NOT NULL DEFAULT 'active'")
+        await _add_column_if_missing(conn, "conversations", "completion_task_id", "VARCHAR(36) NOT NULL DEFAULT ''")
+        await _add_column_if_missing(conn, "conversations", "completion_error", "TEXT NOT NULL DEFAULT ''")
+        await _add_column_if_missing(conn, "conversations", "cleanup_status", "VARCHAR(20) NOT NULL DEFAULT 'retained'")
+        await _add_column_if_missing(conn, "conversations", "cleanup_error", "TEXT NOT NULL DEFAULT ''")
+        await _add_column_if_missing(conn, "conversations", "completed_at", "TIMESTAMP")
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_agent_tasks_conversation_id ON agent_tasks (conversation_id)"
+        ))
+        if conn.dialect.name == "postgresql":
+            await conn.execute(text(
+                "UPDATE agent_tasks SET conversation_id = NULLIF(payload_json ->> 'conversation_id', '') "
+                "WHERE conversation_id IS NULL AND payload_json IS NOT NULL"
+            ))
+        elif conn.dialect.name == "sqlite":
+            await conn.execute(text(
+                "UPDATE agent_tasks SET conversation_id = NULLIF(json_extract(payload_json, '$.conversation_id'), '') "
+                "WHERE conversation_id IS NULL AND payload_json IS NOT NULL AND json_valid(payload_json)"
+            ))
 
     async with AsyncSessionLocal() as db:
+        provider_rows = await db.execute(
+            select(UserLLMProvider).order_by(
+                UserLLMProvider.user_id,
+                UserLLMProvider.scope_type,
+                UserLLMProvider.project_id,
+                UserLLMProvider.is_default.desc(),
+                UserLLMProvider.created_at,
+            )
+        )
+        providers = list(provider_rows.scalars().all())
+        backfill_enabled_formats = bool(providers) and not any(
+            programming_tool_service.provider_enabled_formats(provider)
+            for provider in providers
+        )
+        claimed_formats: set[tuple[str, str, str, str]] = set()
+        for provider in providers:
+            formats = programming_tool_service.provider_formats(provider)
+            requested = programming_tool_service.provider_enabled_formats(provider)
+            if backfill_enabled_formats:
+                requested = formats
+            scope_key = (
+                str(provider.user_id),
+                str(provider.scope_type or "global"),
+                str(provider.project_id or ""),
+            )
+            enabled: list[str] = []
+            for format_name in requested:
+                claim_key = (*scope_key, format_name)
+                if claim_key in claimed_formats:
+                    continue
+                claimed_formats.add(claim_key)
+                enabled.append(format_name)
+            provider.enabled_formats_json = enabled
+
         app_config = await db.get(AppConfig, 1)
         if app_config is None:
             db.add(AppConfig(id=1))
@@ -245,10 +285,8 @@ async def get_site_provider_config(db: AsyncSession, site_id: str) -> dict[str, 
         "site_id": site_id,
         "codex_cmd": "",
         "claude_cmd": "",
-        "gemini_cmd": "",
         "codex_auth_cmd": "",
         "claude_auth_cmd": "",
-        "gemini_auth_cmd": "",
     }
     if row is None:
         return defaults
@@ -347,6 +385,10 @@ async def shutdown() -> None:
                 site_service._stop_site_process(site.site_id)
             except Exception:
                 continue
+    from backend.core.auth_session import auth_session_store
+    from backend.core.task_stream_ticket import task_stream_ticket_store
+    await auth_session_store.close()
+    await task_stream_ticket_store.close()
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -572,71 +614,38 @@ async def provider_auth_start(
     provider: str,
     payload: dict[str, Any] = Body(default_factory=dict),
     db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
-    if provider not in settings.provider_list:
-        raise HTTPException(status_code=400, detail=f"provider 不支持: {provider}")
-    user = await get_legacy_user(db)
-    site_id = (payload.get("site_id") or "").strip() or await get_default_site_id(db, user)
-    if not site_id:
-        raise HTTPException(status_code=404, detail="暂无站点，请先创建")
-    config = await get_site_provider_config(db, site_id)
-    command_map = {
-        "codex": config.get("codex_auth_cmd") or settings.codex_auth_cmd,
-        "claude_code": config.get("claude_auth_cmd") or settings.claude_auth_cmd,
-        "gemini_cli": config.get("gemini_auth_cmd") or settings.gemini_auth_cmd,
-    }
-    command = shlex.split(command_map[provider])
-    with provider_auth_locks[provider]:
-        existing = provider_auth_processes.get(provider)
-        if existing and existing.poll() is None:
-            return {"ok": True, "started": False, "message": "已有认证流程在运行中"}
-        process = subprocess.Popen(
-            command,
-            cwd=str(site_service.site_root(site_id)),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        provider_auth_processes[provider] = process
-        append_provider_auth_log(provider, f"开始认证命令: {' '.join(command)}")
-
-    def _pump() -> None:
-        if not process.stdout:
-            return
-        for line in process.stdout:
-            append_provider_auth_log(provider, line)
-        append_provider_auth_log(provider, f"认证进程退出，code={process.returncode}")
-
-    threading.Thread(target=_pump, daemon=True).start()
-    return {"ok": True, "started": True}
+    _current_user: object = Depends(require_role("admin")),
+) -> Response:
+    del payload, db
+    path = {"codex": "/oauth/start", "claude_code": "/auth/start"}.get(provider)
+    adapter_url = ADAPTER_URLS.get(provider)
+    if not path or not adapter_url:
+        raise HTTPException(status_code=400, detail="该编程工具仅支持项目模型配置，不支持服务器登录态")
+    return await proxy_to_mcp_bridge(adapter_url, provider, "POST", path)
 
 
 @app.get("/api/providers/{provider}/auth/status")
-async def provider_auth_status(provider: str) -> dict[str, Any]:
-    if provider not in settings.provider_list:
-        raise HTTPException(status_code=400, detail=f"provider 不支持: {provider}")
-    process = provider_auth_processes.get(provider)
-    auth_file = Path(PROVIDER_AUTH_FILES[provider])
-    return {
-        "ok": True,
-        "provider": provider,
-        "running": bool(process and process.poll() is None),
-        "authenticated": auth_file.exists() and auth_file.stat().st_size > 0,
-        "auth_file": str(auth_file),
-        "recent_logs": list(provider_auth_logs[provider])[-50:],
-    }
+async def provider_auth_status(
+    provider: str,
+    _current_user: object = Depends(get_current_user),
+) -> Response:
+    path = {"codex": "/oauth/status", "claude_code": "/auth/status"}.get(provider)
+    adapter_url = ADAPTER_URLS.get(provider)
+    if not path or not adapter_url:
+        raise HTTPException(status_code=400, detail="该编程工具仅支持项目模型配置，不支持服务器登录态")
+    return await proxy_to_mcp_bridge(adapter_url, provider, "GET", path)
 
 
 @app.post("/api/providers/{provider}/auth/cancel")
-async def provider_auth_cancel(provider: str) -> dict[str, Any]:
-    if provider not in settings.provider_list:
-        raise HTTPException(status_code=400, detail=f"provider 不支持: {provider}")
-    with provider_auth_locks[provider]:
-        process = provider_auth_processes.get(provider)
-        if process and process.poll() is None:
-            process.terminate()
-            append_provider_auth_log(provider, "已请求停止认证流程")
-    return {"ok": True}
+async def provider_auth_cancel(
+    provider: str,
+    _current_user: object = Depends(require_role("admin")),
+) -> Response:
+    path = {"codex": "/oauth/cancel", "claude_code": "/auth/cancel"}.get(provider)
+    adapter_url = ADAPTER_URLS.get(provider)
+    if not path or not adapter_url:
+        raise HTTPException(status_code=400, detail="该编程工具仅支持项目模型配置，不支持服务器登录态")
+    return await proxy_to_mcp_bridge(adapter_url, provider, "POST", path)
 
 
 async def proxy_to_mcp_bridge(
@@ -648,8 +657,10 @@ async def proxy_to_mcp_bridge(
 ) -> Response:
     url = f"{bridge_url}{path}"
     try:
+        token = os.getenv("PROGRAMMING_TOOL_ADAPTER_TOKEN", "").strip()
+        headers = {"X-Adapter-Token": token} if token else {}
         async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.request(method, url, json=json_payload)
+            resp = await client.request(method, url, json=json_payload, headers=headers)
             resp.raise_for_status()
             return JSONResponse(status_code=resp.status_code, content=resp.json())
     except Exception as exc:
@@ -657,50 +668,66 @@ async def proxy_to_mcp_bridge(
 
 
 async def proxy_to_codex_bridge(method: str, path: str, json_payload: dict[str, Any] | None = None) -> Response:
-    return await proxy_to_mcp_bridge(settings.code_mcp_bridge_url, "codex-mcp", method, path, json_payload)
+    return await proxy_to_mcp_bridge(ADAPTER_URLS["codex"], "codex-adapter", method, path, json_payload)
 
 
 async def proxy_to_claude_bridge(method: str, path: str, json_payload: dict[str, Any] | None = None) -> Response:
-    return await proxy_to_mcp_bridge(settings.claude_mcp_bridge_url, "claude-code-mcp", method, path, json_payload)
+    return await proxy_to_mcp_bridge(ADAPTER_URLS["claude_code"], "claude-code-adapter", method, path, json_payload)
 
 
 @app.post("/api/codex/oauth/start")
-async def start_codex_oauth() -> Response:
+async def start_codex_oauth(
+    _current_user: object = Depends(require_role("admin")),
+) -> Response:
     return await proxy_to_codex_bridge("POST", "/oauth/start")
 
 
 @app.post("/api/codex/oauth/cancel")
-async def cancel_codex_oauth() -> Response:
+async def cancel_codex_oauth(
+    _current_user: object = Depends(require_role("admin")),
+) -> Response:
     return await proxy_to_codex_bridge("POST", "/oauth/cancel")
 
 
 @app.get("/api/codex/oauth/status")
-async def codex_oauth_status() -> Response:
+async def codex_oauth_status(
+    _current_user: object = Depends(get_current_user),
+) -> Response:
     return await proxy_to_codex_bridge("GET", "/oauth/status")
 
 
 @app.get("/api/codex/mcp/status")
-async def codex_mcp_status() -> Response:
+async def codex_mcp_status(
+    _current_user: object = Depends(get_current_user),
+) -> Response:
     return await proxy_to_codex_bridge("GET", "/mcp/status")
 
 
 @app.post("/api/claude-code/auth/start")
-async def start_claude_auth() -> Response:
+async def start_claude_auth(
+    _current_user: object = Depends(require_role("admin")),
+) -> Response:
     return await proxy_to_claude_bridge("POST", "/auth/start")
 
 
 @app.post("/api/claude-code/auth/cancel")
-async def cancel_claude_auth() -> Response:
+async def cancel_claude_auth(
+    _current_user: object = Depends(require_role("admin")),
+) -> Response:
     return await proxy_to_claude_bridge("POST", "/auth/cancel")
 
 
 @app.get("/api/claude-code/auth/status")
-async def claude_auth_status() -> Response:
+async def claude_auth_status(
+    _current_user: object = Depends(get_current_user),
+) -> Response:
     return await proxy_to_claude_bridge("GET", "/auth/status")
 
 
 @app.get("/api/claude-code/mcp/status")
-async def claude_mcp_status() -> Response:
+async def claude_mcp_status(
+    _current_user: object = Depends(get_current_user),
+) -> Response:
     return await proxy_to_claude_bridge("GET", "/mcp/status")
 
 
@@ -732,12 +759,6 @@ async def build_health_payload() -> dict[str, Any]:
     finally:
         if redis_client is not None:
             await redis_client.aclose()
-
-    try:
-        components["minio"] = minio_client.healthcheck()
-    except Exception as exc:
-        healthy = False
-        components["minio"] = {"status": "error", "detail": str(exc)}
 
     return {"ok": healthy, "app": settings.app_name, "components": components}
 

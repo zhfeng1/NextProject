@@ -1,10 +1,15 @@
 .git
 .gitignore
+.env
+.env.*
+!.env.example
 .DS_Store
 .coverage
 .idea/
 __pycache__/
+**/__pycache__/
 *.pyc
+**/*.pyc
 *.pyo
 *.pyd
 .pytest_cache/

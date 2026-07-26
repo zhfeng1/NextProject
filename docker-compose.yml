@@ -23,33 +23,17 @@ services:
     restart: unless-stopped
     environment:
       TZ: ${TZ:-Asia/Shanghai}
-    command: redis-server --requirepass ${REDIS_PASSWORD:-redis2025} --appendonly yes
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis2025}
+    command: redis-server /usr/local/etc/redis/redis.conf --requirepass ${REDIS_PASSWORD:-redis2025}
     volumes:
       - redis_data:/data
+      - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis2025}", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
       interval: 10s
       timeout: 3s
       retries: 5
-
-  minio:
-    image: minio/minio:latest
-    container_name: nextproject-minio
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      TZ: ${TZ:-Asia/Shanghai}
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin2025}
-    volumes:
-      - minio_data:/data
-    ports:
-      - "20102:9001"   # MinIO 控制台
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
+    stop_grace_period: 30s
 
   main-service:
     image: nextproject-main-service:latest
@@ -69,30 +53,27 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://admin:nextproject2025@postgres:5432/nextproject}
       - SYNC_DATABASE_URL=${SYNC_DATABASE_URL:-postgresql+psycopg://admin:nextproject2025@postgres:5432/nextproject}
       - REDIS_URL=${REDIS_URL:-redis://:redis2025@redis:6379/0}
+      - AUTH_SESSION_BACKEND=${AUTH_SESSION_BACKEND:-redis}
+      - AUTH_SESSION_KEY_PREFIX=${AUTH_SESSION_KEY_PREFIX:-nextproject:auth}
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:redis2025@redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:redis2025@redis:6379/1}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
-      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
-      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin2025}
-      - MINIO_SECURE=${MINIO_SECURE:-false}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
       - FERNET_KEY=${FERNET_KEY:?FERNET_KEY is required}
-      - CODEX_MCP_BRIDGE_URL=http://codex-mcp:8090
-      - CLAUDE_MCP_BRIDGE_URL=http://claude-code-mcp:8091
+      - PROGRAMMING_TOOL_ADAPTER_TOKEN=${PROGRAMMING_TOOL_ADAPTER_TOKEN:?PROGRAMMING_TOOL_ADAPTER_TOKEN is required}
+      - CODEX_ADAPTER_URL=http://codex-adapter:8090
+      - CLAUDE_CODE_ADAPTER_URL=http://claude-code-adapter:8091
+      - CODEBUDDY_ADAPTER_URL=http://codebuddy-adapter:8092
+      - OPENCODE_ADAPTER_URL=http://opencode-adapter:8093
+      - KIMI_CODE_ADAPTER_URL=http://kimi-code-adapter:8094
       - LLM_DIALOG_LOG_ENABLED=${LLM_DIALOG_LOG_ENABLED:-false}
       - LLM_DIALOG_LOG_MAX_CHARS=${LLM_DIALOG_LOG_MAX_CHARS:-4000}
       - SUB_SITE_PORT_START=${SUB_SITE_PORT_START:-19100}
       - SUB_SITE_PORT_END=${SUB_SITE_PORT_END:-19999}
       - AGENT_TASK_WORKERS=${AGENT_TASK_WORKERS:-2}
       - PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL:-http://127.0.0.1:8080}
-      - CODEX_CMD=${CODEX_CMD:-codex exec}
-      - CLAUDE_CMD=${CLAUDE_CMD:-claude}
-      - GEMINI_CMD=${GEMINI_CMD:-gemini}
-      - CODEX_AUTH_CMD=${CODEX_AUTH_CMD:-codex login --device-auth}
-      - CLAUDE_AUTH_CMD=${CLAUDE_AUTH_CMD:-claude login}
-      - GEMINI_AUTH_CMD=${GEMINI_AUTH_CMD:-gemini auth login}
       - GENERATED_SITES_ROOT=/generated_sites
       - TASK_ARTIFACTS_ROOT=/shared/task_artifacts
+      - PROGRAMMING_SESSION_ROOT=/shared/programming_sessions
       - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-http://localhost:20100,http://127.0.0.1:20100}
       - CORS_ALLOW_CREDENTIALS=${CORS_ALLOW_CREDENTIALS:-true}
     depends_on:
@@ -100,12 +81,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
-        condition: service_healthy
-      codex-mcp:
-        condition: service_started
-      claude-code-mcp:
-        condition: service_started
+    networks:
+      - default
+      - programming-adapters
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 15s
@@ -113,28 +91,162 @@ services:
       retries: 5
       start_period: 20s
 
-  codex-mcp:
+  codex-adapter:
     build:
       context: .
-      dockerfile: codex_mcp/Dockerfile
-    container_name: codex-mcp
+      dockerfile: programming_tool_adapter/Dockerfile
+      args:
+        TOOL_ID: codex
+    container_name: nextproject-codex-adapter
     restart: unless-stopped
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      - TOOL_ID=codex
+      - PORT=8090
+      - PROGRAMMING_TOOL_ADAPTER_TOKEN=${PROGRAMMING_TOOL_ADAPTER_TOKEN:?PROGRAMMING_TOOL_ADAPTER_TOKEN is required}
+      - TASK_ARTIFACTS_ROOT=/shared/task_artifacts
+      - PROGRAMMING_SESSION_ROOT=/shared/programming_sessions
     volumes:
       - ./data/codex_home:/root/.codex
+      - ./data/programming_sessions:/shared/programming_sessions
+      - ./data/task_artifacts:/shared/task_artifacts
+      - ./generated_sites:/generated_sites
+    tmpfs:
+      - /run/nextproject-adapter:mode=0700
+    networks:
+      programming-adapters:
+        aliases:
+          - codex-mcp
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
-  claude-code-mcp:
+  claude-code-adapter:
     build:
       context: .
-      dockerfile: claude_code_mcp/Dockerfile
-    container_name: claude-code-mcp
+      dockerfile: programming_tool_adapter/Dockerfile
+      args:
+        TOOL_ID: claude_code
+    container_name: nextproject-claude-code-adapter
     restart: unless-stopped
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      - TOOL_ID=claude_code
+      - PORT=8091
+      - PROGRAMMING_TOOL_ADAPTER_TOKEN=${PROGRAMMING_TOOL_ADAPTER_TOKEN:?PROGRAMMING_TOOL_ADAPTER_TOKEN is required}
+      - TASK_ARTIFACTS_ROOT=/shared/task_artifacts
+      - PROGRAMMING_SESSION_ROOT=/shared/programming_sessions
     volumes:
       - ./data/claude_home:/root/.claude
       - ./data/claude_config:/root/.config/claude-code
+      - ./data/programming_sessions:/shared/programming_sessions
+      - ./data/task_artifacts:/shared/task_artifacts
+      - ./generated_sites:/generated_sites
+    tmpfs:
+      - /run/nextproject-adapter:mode=0700
+    networks:
+      programming-adapters:
+        aliases:
+          - claude-code-mcp
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8091/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  codebuddy-adapter:
+    build:
+      context: .
+      dockerfile: programming_tool_adapter/Dockerfile
+      args:
+        TOOL_ID: codebuddy
+    container_name: nextproject-codebuddy-adapter
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - TOOL_ID=codebuddy
+      - PORT=8092
+      - PROGRAMMING_TOOL_ADAPTER_TOKEN=${PROGRAMMING_TOOL_ADAPTER_TOKEN:?PROGRAMMING_TOOL_ADAPTER_TOKEN is required}
+      - TASK_ARTIFACTS_ROOT=/shared/task_artifacts
+      - PROGRAMMING_SESSION_ROOT=/shared/programming_sessions
+    volumes:
+      - ./data/programming_sessions:/shared/programming_sessions
+      - ./data/task_artifacts:/shared/task_artifacts
+      - ./generated_sites:/generated_sites
+    tmpfs:
+      - /run/nextproject-adapter:mode=0700
+    networks:
+      - programming-adapters
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8092/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  opencode-adapter:
+    build:
+      context: .
+      dockerfile: programming_tool_adapter/Dockerfile
+      args:
+        TOOL_ID: opencode
+    container_name: nextproject-opencode-adapter
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - TOOL_ID=opencode
+      - PORT=8093
+      - PROGRAMMING_TOOL_ADAPTER_TOKEN=${PROGRAMMING_TOOL_ADAPTER_TOKEN:?PROGRAMMING_TOOL_ADAPTER_TOKEN is required}
+      - TASK_ARTIFACTS_ROOT=/shared/task_artifacts
+      - PROGRAMMING_SESSION_ROOT=/shared/programming_sessions
+    volumes:
+      - ./data/programming_sessions:/shared/programming_sessions
+      - ./data/task_artifacts:/shared/task_artifacts
+      - ./generated_sites:/generated_sites
+    tmpfs:
+      - /run/nextproject-adapter:mode=0700
+    networks:
+      - programming-adapters
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8093/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  kimi-code-adapter:
+    build:
+      context: .
+      dockerfile: programming_tool_adapter/Dockerfile
+      args:
+        TOOL_ID: kimi_code
+    container_name: nextproject-kimi-code-adapter
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - TOOL_ID=kimi_code
+      - PORT=8094
+      - PROGRAMMING_TOOL_ADAPTER_TOKEN=${PROGRAMMING_TOOL_ADAPTER_TOKEN:?PROGRAMMING_TOOL_ADAPTER_TOKEN is required}
+      - TASK_ARTIFACTS_ROOT=/shared/task_artifacts
+      - PROGRAMMING_SESSION_ROOT=/shared/programming_sessions
+    volumes:
+      - ./data/programming_sessions:/shared/programming_sessions
+      - ./data/task_artifacts:/shared/task_artifacts
+      - ./generated_sites:/generated_sites
+    tmpfs:
+      - /run/nextproject-adapter:mode=0700
+    networks:
+      - programming-adapters
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8094/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   celery-worker:
     image: nextproject-main-service:latest
@@ -156,14 +268,24 @@ services:
       - FERNET_KEY=${FERNET_KEY:?FERNET_KEY is required}
       - GENERATED_SITES_ROOT=/generated_sites
       - TASK_ARTIFACTS_ROOT=/shared/task_artifacts
+      - PROGRAMMING_SESSION_ROOT=/shared/programming_sessions
       - PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL:-http://127.0.0.1:8080}
-      - CODEX_CMD=${CODEX_CMD:-codex exec}
-      - CLAUDE_CMD=${CLAUDE_CMD:-claude}
-      - GEMINI_CMD=${GEMINI_CMD:-gemini}
+      - PROGRAMMING_TOOL_ADAPTER_TOKEN=${PROGRAMMING_TOOL_ADAPTER_TOKEN:?PROGRAMMING_TOOL_ADAPTER_TOKEN is required}
+      - CODEX_ADAPTER_URL=http://codex-adapter:8090
+      - CLAUDE_CODE_ADAPTER_URL=http://claude-code-adapter:8091
+      - CODEBUDDY_ADAPTER_URL=http://codebuddy-adapter:8092
+      - OPENCODE_ADAPTER_URL=http://opencode-adapter:8093
+      - KIMI_CODE_ADAPTER_URL=http://kimi-code-adapter:8094
     depends_on:
-      - postgres
-      - redis
-      - main-service
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      main-service:
+        condition: service_healthy
+    networks:
+      - default
+      - programming-adapters
     healthcheck:
       test: ["CMD-SHELL", "celery -A backend.core.celery_app inspect ping -d celery@$$HOSTNAME | grep -q pong"]
       interval: 30s
@@ -260,16 +382,10 @@ services:
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:redis2025@redis:6379/1}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
       - FERNET_KEY=${FERNET_KEY:-dGVzdC1mZXJuZXQta2V5LWZvci10ZXN0aW5nMTIzNDU=}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
-      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
-      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin2025}
-      - MINIO_SECURE=${MINIO_SECURE:-false}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      minio:
         condition: service_healthy
 
   frontend:
@@ -295,6 +411,9 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  minio_data:
   prometheus_data:
   grafana_data:
+
+networks:
+  programming-adapters:
+    driver: bridge

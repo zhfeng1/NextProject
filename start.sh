@@ -59,7 +59,11 @@ fi
 # ── 3. 启动 ───────────────────────────────────────────────────
 log_info "启动服务 (docker compose up $BUILD_FLAG $DETACH_FLAG)..."
 
-CORE_SERVICES=(postgres redis minio codex-mcp claude-code-mcp main-service celery-worker frontend)
+CORE_SERVICES=(
+    postgres redis
+    codex-adapter claude-code-adapter codebuddy-adapter opencode-adapter
+    main-service celery-worker frontend
+)
 OPTIONAL_SERVICES=()
 
 if [ "$START_MONITORING" = true ]; then
@@ -70,7 +74,7 @@ if [ "$START_SCHEDULER" = true ]; then
     OPTIONAL_SERVICES+=(celery-beat)
 fi
 
-docker compose "${COMPOSE_PROFILE_FLAGS[@]}" up $BUILD_FLAG $DETACH_FLAG \
+docker compose "${COMPOSE_PROFILE_FLAGS[@]}" up --remove-orphans $BUILD_FLAG $DETACH_FLAG \
     "${CORE_SERVICES[@]}" "${OPTIONAL_SERVICES[@]}"
 
 if [ -n "$DETACH_FLAG" ]; then
@@ -78,7 +82,6 @@ if [ -n "$DETACH_FLAG" ]; then
     echo -e "${GREEN}========================================${NC}"
     echo -e "${GREEN}  服务已在后台启动${NC}"
     echo -e "${GREEN}  前端:         http://localhost:20100${NC}"
-    echo -e "${GREEN}  MinIO 控制台: http://localhost:20102${NC}"
     if [ "$START_MONITORING" = true ]; then
         echo -e "${GREEN}  Flower:       http://localhost:20101${NC}"
         echo -e "${GREEN}  Grafana:      http://localhost:20103${NC}"
