@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import ipaddress
-import socket
 import uuid
 from typing import Any
 from urllib.parse import urlparse
@@ -20,42 +18,14 @@ from backend.services.project_service import project_service
 router = APIRouter(prefix="/providers")
 SUPPORTED_FORMATS_SET = set(SUPPORTED_FORMATS)
 
-# ---------------------------------------------------------------------------
-# SSRF protection: block requests to internal / private networks
-# ---------------------------------------------------------------------------
-_BLOCKED_NETWORKS = [
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-    ipaddress.ip_network("169.254.0.0/16"),
-    ipaddress.ip_network("0.0.0.0/8"),
-    ipaddress.ip_network("::1/128"),
-    ipaddress.ip_network("fc00::/7"),
-    ipaddress.ip_network("fe80::/10"),
-]
-
-
-def _validate_url_ssrf(url: str) -> None:
-    """Raise HTTPException if *url* targets a private / internal address."""
+def _validate_base_url(url: str) -> None:
+    """Validate the URL format while allowing private/internal endpoints."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise HTTPException(status_code=400, detail="base_url 必须使用 http 或 https 协议")
     hostname = parsed.hostname
     if not hostname:
         raise HTTPException(status_code=400, detail="base_url 主机名无效")
-    try:
-        resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-    except socket.gaierror:
-        raise HTTPException(status_code=400, detail=f"无法解析主机名: {hostname}")
-    for _family, _type, _proto, _canonname, sockaddr in resolved:
-        ip = ipaddress.ip_address(sockaddr[0])
-        for net in _BLOCKED_NETWORKS:
-            if ip in net:
-                raise HTTPException(
-                    status_code=400,
-                    detail="base_url 不允许指向内网或私有网络地址",
-                )
 
 
 def _serialize(p: UserLLMProvider) -> dict[str, Any]:
@@ -312,9 +282,9 @@ async def verify_model(
 
     base_url = (p.base_url or "").strip().rstrip("/")
 
-    # SSRF mitigation: block private/internal networks
+    # Validate protocol/hostname; private/internal provider endpoints are supported.
     if base_url:
-        _validate_url_ssrf(base_url)
+        _validate_base_url(base_url)
 
     # Resolve API key: prefer raw api_key from payload, fall back to DB
     api_key = (payload.get("api_key") or "").strip()
@@ -397,8 +367,8 @@ async def fetch_models(
     if not base_url:
         raise HTTPException(status_code=400, detail="base_url 为必填项")
 
-    # SSRF mitigation: block private/internal networks
-    _validate_url_ssrf(base_url)
+    # Validate protocol/hostname; private/internal provider endpoints are supported.
+    _validate_base_url(base_url)
 
     # Resolve API key: prefer raw api_key (user just typed it) over provider_id (DB)
     # This ensures a newly entered key is tested immediately, even before saving.
