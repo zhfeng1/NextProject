@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import {
   ArrowUpCircle,
   CircleAlert,
@@ -36,13 +36,14 @@ const tools = ref<ProgrammingToolVersion[]>([])
 const loading = ref(false)
 const refreshing = ref(false)
 const pendingTool = ref<ProgrammingToolVersion | null>(null)
+const updatingToolIds = reactive(new Set<string>())
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 
 const isSuperuser = computed(() => Boolean(authStore.user?.is_superuser))
 const hasActiveUpdate = computed(() => tools.value.some(isToolUpdating))
 
 function isToolUpdating(tool: ProgrammingToolVersion) {
-  return tool.updating || updateStatusIsActive(tool.status)
+  return updatingToolIds.has(tool.id) || tool.updating || updateStatusIsActive(tool.status)
 }
 
 function clearPollTimer() {
@@ -67,7 +68,12 @@ async function loadVersions(refresh = false, quiet = false) {
   }
   try {
     const response = await programmingToolsAPI.versions(refresh)
-    tools.value = response.tools || []
+    const loadedTools = response.tools || []
+    for (const tool of loadedTools) {
+      if (tool.updating || updateStatusIsActive(tool.status)) updatingToolIds.add(tool.id)
+      else if (tool.status === 'success' || tool.status === 'failed') updatingToolIds.delete(tool.id)
+    }
+    tools.value = loadedTools
   } finally {
     loading.value = false
     refreshing.value = false
@@ -80,13 +86,15 @@ async function refreshVersions() {
 }
 
 function requestUpdate(tool: ProgrammingToolVersion) {
+  if (isToolUpdating(tool)) return
   pendingTool.value = tool
 }
 
 async function confirmUpdate() {
   const tool = pendingTool.value
   pendingTool.value = null
-  if (!tool) return
+  if (!tool || isToolUpdating(tool)) return
+  updatingToolIds.add(tool.id)
   tool.updating = true
   tool.status = 'queued'
   tool.message = '等待构建最新镜像'
@@ -94,6 +102,7 @@ async function confirmUpdate() {
     const response = await programmingToolsAPI.update(tool.id)
     toast.success(`${tool.label} ${response.target_version} 已加入更新队列`)
   } catch {
+    updatingToolIds.delete(tool.id)
     tool.updating = false
     tool.status = 'failed'
   } finally {
@@ -229,19 +238,30 @@ onBeforeUnmount(clearPollTimer)
           </div>
 
           <Button
+            v-if="isToolUpdating(tool)"
+            type="button"
+            variant="secondary"
+            class="h-10 w-full border border-border bg-muted text-muted-foreground opacity-100 md:w-auto md:min-w-28"
+            disabled
+            aria-busy="true"
+            :aria-label="`${tool.label} 更新中`"
+          >
+            <Loader2 class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+            更新中
+          </Button>
+
+          <Button
+            v-else
             type="button"
             class="h-10 w-full md:w-auto md:min-w-28"
-            :class="isToolUpdating(tool) ? 'disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100' : ''"
-            :variant="isToolUpdating(tool) ? 'secondary' : tool.has_update ? 'default' : 'outline'"
-            :disabled="isToolUpdating(tool) || !tool.has_update || !tool.healthy"
-            :aria-busy="isToolUpdating(tool)"
+            :variant="tool.has_update ? 'default' : 'outline'"
+            :disabled="!tool.has_update || !tool.healthy"
             :aria-label="tool.has_update ? `更新 ${tool.label} 到 ${tool.latest_version}` : `${tool.label} 已是最新版本`"
             @click="requestUpdate(tool)"
           >
-            <Loader2 v-if="isToolUpdating(tool)" class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-            <ArrowUpCircle v-else-if="tool.has_update" class="size-4" aria-hidden="true" />
+            <ArrowUpCircle v-if="tool.has_update" class="size-4" aria-hidden="true" />
             <CircleCheckBig v-else class="size-4" aria-hidden="true" />
-            {{ isToolUpdating(tool) ? '更新中' : tool.has_update ? '更新' : '无需更新' }}
+            {{ tool.has_update ? '更新' : '无需更新' }}
           </Button>
         </div>
 
