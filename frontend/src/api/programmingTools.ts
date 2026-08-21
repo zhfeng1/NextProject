@@ -25,6 +25,32 @@ export interface ProgrammingToolsResponse {
   tools: ProgrammingTool[]
 }
 
+export type ProgrammingToolUpdateStatus = 'idle' | 'queued' | 'building' | 'restarting' | 'success' | 'failed'
+
+export interface ProgrammingToolVersion {
+  id: string
+  label: string
+  package_name: string
+  service_name: string
+  healthy: boolean
+  current_version: string
+  current_version_raw: string
+  latest_version: string
+  latest_error: string
+  has_update: boolean
+  updating: boolean
+  status: ProgrammingToolUpdateStatus
+  message: string
+  target_version: string
+  started_at?: string | null
+  finished_at?: string | null
+}
+
+export interface ProgrammingToolVersionsResponse {
+  ok: boolean
+  tools: ProgrammingToolVersion[]
+}
+
 const hiddenToolIds = new Set(['claude_code'])
 
 export const PROGRAMMING_TOOL_IDS = ['codex', 'codebuddy', 'opencode', 'kimi_code'] as const
@@ -62,5 +88,15 @@ export const programmingToolsAPI = {
     return client.get<any, ProgrammingToolsResponse>('/programming-tools', {
       params: { project_id: projectId },
     })
+  },
+  versions(refresh = false) {
+    return client.get<any, ProgrammingToolVersionsResponse>('/programming-tools/versions', {
+      params: { refresh },
+    })
+  },
+  update(toolId: string) {
+    return client.post<any, { ok: boolean; tool_id: string; target_version: string; status: string }>(
+      `/programming-tools/${toolId}/update`,
+    )
   },
 }

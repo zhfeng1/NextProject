@@ -34,9 +34,7 @@ else:
         raise HTTPException(status_code=503, detail="Security dependency is not ready")
 
 
-async def get_current_superuser(current_user: object = None) -> object:
-    if current_user is None:
-        current_user = await get_current_user()
+async def get_current_superuser(current_user: object = Depends(get_current_user)) -> object:
     if not getattr(current_user, "is_superuser", False):
         raise HTTPException(status_code=403, detail="Superuser privileges required")
     return current_user

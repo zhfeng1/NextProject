@@ -47,6 +47,7 @@ RUN npx playwright install chromium
 
 COPY main_service/app /app/app
 COPY backend /app/backend
+COPY programming_tool_adapter /app/programming_tool_adapter
 COPY scripts /app/scripts
 
 EXPOSE 8080

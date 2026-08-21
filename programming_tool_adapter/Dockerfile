@@ -1,9 +1,9 @@
-# syntax=docker/dockerfile:1.7
 FROM node:22-slim AS node-runtime
 
 FROM python:3.12-slim
 
 ARG TOOL_ID=codex
+ARG TOOL_VERSION=
 ENV TOOL_ID=${TOOL_ID}
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -29,14 +29,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 RUN --mount=type=cache,target=/root/.npm \
     case "${TOOL_ID}" in \
-      codex) package='@openai/codex@0.144.4' ;; \
-      claude_code) package='@anthropic-ai/claude-code@2.1.210' ;; \
-      codebuddy) package='@tencent-ai/codebuddy-code@2.121.2' ;; \
-      opencode) package='opencode-ai@1.18.1' ;; \
-      kimi_code) package='@moonshot-ai/kimi-code@0.27.0' ;; \
+      codex) package='@openai/codex'; default_version='0.144.4' ;; \
+      claude_code) package='@anthropic-ai/claude-code'; default_version='2.1.210' ;; \
+      codebuddy) package='@tencent-ai/codebuddy-code'; default_version='2.121.2' ;; \
+      opencode) package='opencode-ai'; default_version='1.18.1' ;; \
+      kimi_code) package='@moonshot-ai/kimi-code'; default_version='0.27.0' ;; \
       *) echo "Unsupported TOOL_ID: ${TOOL_ID}" >&2; exit 1 ;; \
     esac \
-    && npm install -g "${package}" --prefer-online
+    && version="${TOOL_VERSION:-${default_version}}" \
+    && npm install -g "${package}@${version}" --prefer-online
 
 COPY programming_tool_adapter/requirements.txt /app/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip \

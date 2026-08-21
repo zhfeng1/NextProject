@@ -3,19 +3,37 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.deps import get_current_user, get_db
+from backend.api.deps import get_current_superuser, get_current_user, get_db
 from backend.services.programming_tool_service import (
     VISIBLE_TOOL_ORDER,
     ProgrammingToolSpec,
     programming_tool_service,
 )
+from backend.services.programming_tool_update_service import programming_tool_update_service
 from backend.services.project_service import project_service
 
 
 router = APIRouter(prefix="/programming-tools")
+
+
+@router.get("/versions")
+async def list_programming_tool_versions(
+    refresh: bool = Query(default=False),
+    _current_user: object = Depends(get_current_superuser),
+) -> dict[str, Any]:
+    tools = await programming_tool_update_service.list_versions(refresh=refresh)
+    return {"ok": True, "tools": tools}
+
+
+@router.post("/{tool_id}/update", status_code=status.HTTP_202_ACCEPTED)
+async def update_programming_tool(
+    tool_id: str,
+    _current_user: object = Depends(get_current_superuser),
+) -> dict[str, Any]:
+    return await programming_tool_update_service.start_update(tool_id)
 
 
 def _serialize_tool(
