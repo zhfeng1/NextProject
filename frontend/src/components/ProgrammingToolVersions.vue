@@ -39,7 +39,11 @@ const pendingTool = ref<ProgrammingToolVersion | null>(null)
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 
 const isSuperuser = computed(() => Boolean(authStore.user?.is_superuser))
-const hasActiveUpdate = computed(() => tools.value.some(tool => tool.updating))
+const hasActiveUpdate = computed(() => tools.value.some(isToolUpdating))
+
+function isToolUpdating(tool: ProgrammingToolVersion) {
+  return tool.updating || updateStatusIsActive(tool.status)
+}
 
 function clearPollTimer() {
   if (pollTimer) clearTimeout(pollTimer)
@@ -99,7 +103,7 @@ async function confirmUpdate() {
 }
 
 function statusLabel(tool: ProgrammingToolVersion) {
-  if (tool.updating) {
+  if (isToolUpdating(tool)) {
     if (tool.status === 'restarting') return '正在启动'
     if (tool.status === 'queued') return '等待更新'
     return '正在构建'
@@ -113,7 +117,7 @@ function statusLabel(tool: ProgrammingToolVersion) {
 }
 
 function statusClass(tool: ProgrammingToolVersion) {
-  if (tool.updating) return 'border-warning/25 bg-warning/10 text-warning'
+  if (isToolUpdating(tool)) return 'border-warning/25 bg-warning/10 text-warning'
   if (tool.status === 'failed' || !tool.healthy) return 'border-destructive/25 bg-destructive/10 text-destructive'
   if (tool.has_update) return 'border-primary/25 bg-primary/10 text-primary'
   if (tool.current_version && tool.latest_version) return 'border-success/25 bg-success/10 text-success'
@@ -121,7 +125,7 @@ function statusClass(tool: ProgrammingToolVersion) {
 }
 
 function stateIcon(tool: ProgrammingToolVersion) {
-  if (tool.updating) return Loader2
+  if (isToolUpdating(tool)) return Loader2
   if (tool.status === 'failed' || !tool.healthy || tool.latest_error) return CircleAlert
   if (tool.has_update) return ArrowUpCircle
   return CircleCheckBig
@@ -194,7 +198,7 @@ onBeforeUnmount(clearPollTimer)
                 <component
                   :is="stateIcon(tool)"
                   class="mr-1 size-3.5"
-                  :class="tool.updating ? 'animate-spin motion-reduce:animate-none' : ''"
+                  :class="isToolUpdating(tool) ? 'animate-spin motion-reduce:animate-none' : ''"
                   aria-hidden="true"
                 />
                 {{ statusLabel(tool) }}
@@ -227,15 +231,17 @@ onBeforeUnmount(clearPollTimer)
           <Button
             type="button"
             class="h-10 w-full md:w-auto md:min-w-28"
-            :variant="tool.has_update ? 'default' : 'outline'"
-            :disabled="!tool.has_update || tool.updating || !tool.healthy"
+            :class="isToolUpdating(tool) ? 'disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100' : ''"
+            :variant="isToolUpdating(tool) ? 'secondary' : tool.has_update ? 'default' : 'outline'"
+            :disabled="isToolUpdating(tool) || !tool.has_update || !tool.healthy"
+            :aria-busy="isToolUpdating(tool)"
             :aria-label="tool.has_update ? `更新 ${tool.label} 到 ${tool.latest_version}` : `${tool.label} 已是最新版本`"
             @click="requestUpdate(tool)"
           >
-            <Loader2 v-if="tool.updating" class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+            <Loader2 v-if="isToolUpdating(tool)" class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
             <ArrowUpCircle v-else-if="tool.has_update" class="size-4" aria-hidden="true" />
             <CircleCheckBig v-else class="size-4" aria-hidden="true" />
-            {{ tool.updating ? '更新中' : tool.has_update ? '更新' : '无需更新' }}
+            {{ isToolUpdating(tool) ? '更新中' : tool.has_update ? '更新' : '无需更新' }}
           </Button>
         </div>
 
