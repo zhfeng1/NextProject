@@ -19,7 +19,6 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -284,7 +283,7 @@ onBeforeUnmount(clearPollTimer)
       </AlertDialogHeader>
       <AlertDialogFooter>
         <AlertDialogCancel>取消</AlertDialogCancel>
-        <AlertDialogAction @click="confirmUpdate">确认更新</AlertDialogAction>
+        <Button type="button" @click="confirmUpdate">确认更新</Button>
       </AlertDialogFooter>
     </AlertDialogContent>
   </AlertDialog>
