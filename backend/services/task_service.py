@@ -23,6 +23,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.models import Conversation, Project, Site, Task, TaskLog, TaskRepository, TaskStatus
 from backend.models.user_llm_provider import UserLLMProvider
 from backend.core.encryption import decrypt_api_key
+from backend.core.config import get_settings
+from backend.core.security import create_programming_mcp_token
 from backend.services.execution_trace_service import read_execution_trace, redact_execution_text
 from backend.services.mcp_service import mcp_service
 from backend.services.conversation_git_service import conversation_git_service
@@ -64,9 +66,52 @@ ADAPTER_URLS = {
     if (spec := programming_tool_service.get_spec(tool_id)) is not None
 }
 PROVIDER_OUTPUT_BLOCK_SEPARATOR = "\n\x1e\n"
+TECH_PLATFORM_MCP_SERVICE_ID = "nextproject-tech-platform"
 
 
 class TaskService:
+    @staticmethod
+    def _tech_platform_mcp_service(
+        *,
+        task: Task,
+        user_id: str,
+        project_id: str,
+        site_ids: list[str],
+    ) -> dict[str, Any]:
+        token = create_programming_mcp_token(
+            {
+                "sub": user_id,
+                "task_id": str(task.id),
+                "project_id": project_id,
+                "site_ids": site_ids,
+            }
+        )
+        config: dict[str, Any] = {
+            "url": get_settings().tech_platform_mcp_url,
+            "headers": {"Authorization": f"Bearer {token}"},
+        }
+        if str(task.provider or "") == "codex":
+            config["bearer_token_env_var"] = "NEXTPROJECT_TECH_PLATFORM_MCP_TOKEN"
+        return {
+            "id": "",
+            "service_id": TECH_PLATFORM_MCP_SERVICE_ID,
+            "name": "NextProject 技术中台部署",
+            "description": (
+                "调用当前项目的技术中台模块扫描、YAML 预览/校验、部署及任务日志能力。"
+                "仅在代码已准备好且用户要求部署时发起部署。"
+            ),
+            "scope_type": "task",
+            "project_id": project_id,
+            "site_id": "",
+            "enabled": True,
+            "config": config,
+            "required_fields": [],
+            "supports_config": False,
+            "last_test_ok": True,
+            "last_tested_at": None,
+            "last_error": "",
+        }
+
     @staticmethod
     def _llm_provider_formats(provider: UserLLMProvider) -> list[str]:
         raw_formats = getattr(provider, "formats_json", None) or []
@@ -1517,6 +1562,20 @@ class TaskService:
             site_ids=site_db_ids,
             selected_service_ids=selected_mcp_service_ids,
         )
+        owner_id = str(primary_site.owner_id) if primary_site else ""
+        enabled_mcp_services = [
+            service
+            for service in enabled_mcp_services
+            if service["service_id"] != TECH_PLATFORM_MCP_SERVICE_ID
+        ]
+        enabled_mcp_services.append(
+            self._tech_platform_mcp_service(
+                task=task,
+                user_id=owner_id,
+                project_id=project_id,
+                site_ids=site_db_ids,
+            )
+        )
         if enabled_mcp_services:
             service_lines = [
                 f"- {service['service_id']}: {service['name']} - {service['description']}"
@@ -1545,7 +1604,6 @@ class TaskService:
             context_parts.append(f"[本次需求]\n{base_prompt}")
         prompt = "\n\n".join(context_parts) if context_parts else base_prompt
 
-        owner_id = str(primary_site.owner_id) if primary_site else ""
         resolved_provider = await self.resolve_configured_tool_provider(
             db,
             user_id=owner_id,

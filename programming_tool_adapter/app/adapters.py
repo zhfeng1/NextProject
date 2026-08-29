@@ -257,6 +257,12 @@ class CodexAdapter(ProgrammingToolAdapter):
             command.append(request.native_session_id)
         command.append(request.prompt)
         env = self._base_env(request, runtime_dir)
+        for service in request.mcp_services:
+            config = dict(service.config or {})
+            env_name = str(config.get("bearer_token_env_var") or "").strip()
+            authorization = str((config.get("headers") or {}).get("Authorization") or "")
+            if env_name and authorization.lower().startswith("bearer "):
+                env[env_name] = authorization[7:].strip()
         env["CODEX_HOME"] = str(codex_home)
         env["CODEX_SQLITE_HOME"] = str(codex_home)
         return PreparedRun(command=command, env=env)

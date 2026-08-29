@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from backend.api.v1 import sites as v1_sites
 from backend.api.v1 import tasks as v1_tasks
+from backend.api import mcp_tech_platform
 from backend.api.v2 import auth, conversations, deploy, mcp, programming_tools, projects, providers, sites, skills, stats, tasks, tech_platform, templates, versions, websocket
 
 
@@ -9,6 +10,7 @@ def build_api_router() -> APIRouter:
     router = APIRouter()
     router.include_router(v1_sites.router, prefix="/api/v1", tags=["V1 Sites"])
     router.include_router(v1_tasks.router, prefix="/api/v1", tags=["V1 Tasks"])
+    router.include_router(mcp_tech_platform.router, tags=["Internal MCP"])
     router.include_router(auth.router, prefix="/api/v2", tags=["Auth"])
     router.include_router(conversations.router, prefix="/api/v2", tags=["Conversations"])
     router.include_router(projects.router, prefix="/api/v2", tags=["Projects"])

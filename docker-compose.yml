@@ -74,6 +74,7 @@ services:
       - GENERATED_SITES_ROOT=/generated_sites
       - TASK_ARTIFACTS_ROOT=/shared/task_artifacts
       - PROGRAMMING_SESSION_ROOT=/shared/programming_sessions
+      - TECH_PLATFORM_MCP_URL=${TECH_PLATFORM_MCP_URL:-http://main-service:8080/mcp/tech-platform}
       - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-http://localhost:20100,http://127.0.0.1:20100}
       - CORS_ALLOW_CREDENTIALS=${CORS_ALLOW_CREDENTIALS:-true}
       - TECH_PLATFORM_BASE_URL=${TECH_PLATFORM_BASE_URL:-http://192.168.1.15:90}
@@ -278,6 +279,7 @@ services:
       - GENERATED_SITES_ROOT=/generated_sites
       - TASK_ARTIFACTS_ROOT=/shared/task_artifacts
       - PROGRAMMING_SESSION_ROOT=/shared/programming_sessions
+      - TECH_PLATFORM_MCP_URL=${TECH_PLATFORM_MCP_URL:-http://main-service:8080/mcp/tech-platform}
       - PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL:-http://127.0.0.1:8080}
       - PROGRAMMING_TOOL_ADAPTER_TOKEN=${PROGRAMMING_TOOL_ADAPTER_TOKEN:?PROGRAMMING_TOOL_ADAPTER_TOKEN is required}
       - CODEX_ADAPTER_URL=http://codex-adapter:8090

@@ -152,6 +152,10 @@ class RunManager:
                 marker in key for marker in ("key", "token", "secret", "password", "authorization")
             ):
                 values.add(value)
+                if "authorization" in key and value.lower().startswith("bearer "):
+                    bearer_token = value[7:].strip()
+                    if bearer_token:
+                        values.add(bearer_token)
 
         for service in request.mcp_services:
             collect(service.config)

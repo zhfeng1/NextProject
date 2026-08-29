@@ -58,6 +58,11 @@ def create_refresh_token(data: dict[str, Any]) -> str:
     return _create_token(data, timedelta(days=settings.refresh_token_expire_days), "refresh")
 
 
+def create_programming_mcp_token(data: dict[str, Any]) -> str:
+    """Create a short-lived token scoped to one running programming task."""
+    return _create_token(data, timedelta(hours=1), "programming_mcp")
+
+
 def decode_token(token: str) -> dict[str, Any]:
     return jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
 
@@ -101,6 +106,7 @@ __all__ = [
     "REFRESH_TOKEN_EXPIRE_DAYS",
     "SECRET_KEY",
     "create_access_token",
+    "create_programming_mcp_token",
     "create_refresh_token",
     "decode_token",
     "get_current_user",

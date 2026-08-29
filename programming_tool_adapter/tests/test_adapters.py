@@ -5,7 +5,7 @@ import httpx
 import pytest
 
 from programming_tool_adapter.app.adapters import get_adapter
-from programming_tool_adapter.app.models import RunRequest
+from programming_tool_adapter.app.models import McpService, RunRequest
 
 
 def request_for(
@@ -90,6 +90,37 @@ def test_codex_uses_authenticated_custom_provider(tmp_path: Path) -> None:
     assert prepared.env["GIT_COMMITTER_NAME"] == "NextProject"
     assert prepared.env["GIT_COMMITTER_EMAIL"] == "bot@nextproject"
     assert "top-secret-key" not in config
+
+
+def test_codex_uses_mcp_bearer_token_from_environment(tmp_path: Path) -> None:
+    runtime_dir = tmp_path / "codex-mcp"
+    runtime_dir.mkdir()
+    request = request_for("codex", "responses")
+    request.mcp_services.append(
+        McpService.model_validate({
+            "service_id": "nextproject-tech-platform",
+            "config": {
+                "url": "http://main-service:8080/mcp/tech-platform",
+                "headers": {"Authorization": "Bearer short-lived-mcp-token"},
+                "bearer_token_env_var": "NEXTPROJECT_TECH_PLATFORM_MCP_TOKEN",
+            },
+        })
+    )
+
+    prepared = get_adapter("codex").prepare(request, runtime_dir)
+    config = (runtime_dir / "session-state" / "config.toml").read_text(encoding="utf-8")
+
+    assert '[mcp_servers."nextproject-tech-platform"]' in config
+    assert 'url = "http://main-service:8080/mcp/tech-platform"' in config
+    assert (
+        'bearer_token_env_var = "NEXTPROJECT_TECH_PLATFORM_MCP_TOKEN"'
+        in config
+    )
+    assert "short-lived-mcp-token" not in config
+    assert (
+        prepared.env["NEXTPROJECT_TECH_PLATFORM_MCP_TOKEN"]
+        == "short-lived-mcp-token"
+    )
 
 
 @pytest.mark.parametrize(

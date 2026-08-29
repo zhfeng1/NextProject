@@ -247,6 +247,26 @@ async def test_trace_records_redacted_mcp_metadata(tmp_path: Path) -> None:
     assert "mcp-password-secret" not in trace_text
 
 
+def test_mcp_bearer_token_is_redacted_with_or_without_scheme(tmp_path: Path) -> None:
+    workspace = tmp_path / "generated_sites"
+    cwd = workspace / "project"
+    cwd.mkdir(parents=True)
+    manager = RunManager(DummyCodexAdapter())
+    request = run_request(cwd)
+    request.mcp_services.append(McpService.model_validate({
+        "service_id": "private-mcp",
+        "config": {
+            "url": "https://mcp.example/v1",
+            "headers": {"Authorization": "Bearer mcp-bearer-secret"},
+        },
+    }))
+
+    sensitive_values = manager._sensitive_values(request)
+
+    assert "Bearer mcp-bearer-secret" in sensitive_values
+    assert "mcp-bearer-secret" in sensitive_values
+
+
 @pytest.mark.asyncio
 async def test_stream_returns_safe_classified_failure(tmp_path: Path) -> None:
     workspace = tmp_path / "generated_sites"

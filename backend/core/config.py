@@ -50,6 +50,10 @@ class Settings(BaseSettings):
 
     code_mcp_bridge_url: str = Field(default="http://codex-mcp:8090", alias="CODEX_MCP_BRIDGE_URL")
     claude_mcp_bridge_url: str = Field(default="http://claude-code-mcp:8091", alias="CLAUDE_MCP_BRIDGE_URL")
+    tech_platform_mcp_url: str = Field(
+        default="http://main-service:8080/mcp/tech-platform",
+        alias="TECH_PLATFORM_MCP_URL",
+    )
     programming_tool_adapter_token: str = Field(default="", alias="PROGRAMMING_TOOL_ADAPTER_TOKEN")
     codex_adapter_url: str = Field(default="http://codex-adapter:8090", alias="CODEX_ADAPTER_URL")
     claude_code_adapter_url: str = Field(default="http://claude-code-adapter:8091", alias="CLAUDE_CODE_ADAPTER_URL")
