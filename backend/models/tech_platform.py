@@ -34,9 +34,7 @@ class TechPlatformDeploymentModule(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     dockerfile_path: Mapped[str] = mapped_column(String(512), nullable=False)
     build_context: Mapped[str] = mapped_column(String(512), nullable=False, default=".")
     app_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    namespace: Mapped[str] = mapped_column(
-        String(255), nullable=False, default="ocean-km"
-    )
+    namespace: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     harbor_project: Mapped[str] = mapped_column(
         String(255), nullable=False, default="ocean-km"
     )

@@ -65,6 +65,7 @@ async def test_scan_multiple_repositories_is_idempotent_and_marks_missing_files(
         ("api-repo", "Dockerfile.worker"),
         ("worker-repo", "jobs/Dockerfile"),
     }
+    assert all(item["namespace"] == "" for item in modules)
     worker_module = next(
         item for item in modules if item["dockerfile_path"] == "Dockerfile.worker"
     )
@@ -437,6 +438,21 @@ async def test_deploy_api_freezes_non_secret_snapshot_and_blocks_concurrent_task
         headers=auth_headers,
     )
     module = scan.json()["modules"][0]
+
+    preview = await client.post(
+        f"/api/v2/projects/{project['id']}/tech-platform/modules/{module['id']}/preview",
+        json={},
+        headers=auth_headers,
+    )
+    assert preview.status_code == 409
+
+    configured = await client.patch(
+        f"/api/v2/projects/{project['id']}/tech-platform/modules/{module['id']}",
+        json={"namespace": "ocean-km"},
+        headers=auth_headers,
+    )
+    assert configured.status_code == 200, configured.text
+    module = configured.json()["module"]
 
     from backend.models import Task
     from backend.services.task_service import task_service

@@ -83,7 +83,6 @@ services:
       - TECH_PLATFORM_VERIFY_SSL=${TECH_PLATFORM_VERIFY_SSL:-false}
       - HARBOR_REGISTRY=${HARBOR_REGISTRY:-harbor.trscd.com.cn}
       - HARBOR_PROJECT=${HARBOR_PROJECT:-ocean-km}
-      - TECH_PLATFORM_NAMESPACE=${TECH_PLATFORM_NAMESPACE:-ocean-km}
       - DOCKER_BUILD_PLATFORM=${DOCKER_BUILD_PLATFORM:-linux/amd64}
     depends_on:
       postgres:
@@ -293,7 +292,6 @@ services:
       - TECH_PLATFORM_VERIFY_SSL=${TECH_PLATFORM_VERIFY_SSL:-false}
       - HARBOR_REGISTRY=${HARBOR_REGISTRY:-harbor.trscd.com.cn}
       - HARBOR_PROJECT=${HARBOR_PROJECT:-ocean-km}
-      - TECH_PLATFORM_NAMESPACE=${TECH_PLATFORM_NAMESPACE:-ocean-km}
       - DOCKER_BUILD_PLATFORM=${DOCKER_BUILD_PLATFORM:-linux/amd64}
     depends_on:
       postgres:

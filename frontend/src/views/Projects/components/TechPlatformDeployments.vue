@@ -56,7 +56,7 @@ const emptyDraft = (): TechPlatformModuleInput => ({
   dockerfile_path: 'Dockerfile',
   build_context: '.',
   app_name: '',
-  namespace: 'ocean-km',
+  namespace: '',
   harbor_project: 'ocean-km',
   repository_name: '',
   app_type: '2',
@@ -71,7 +71,7 @@ const draft = ref<TechPlatformModuleInput>(emptyDraft())
 const isEditing = computed(() => Boolean(editingId.value))
 const runningCount = computed(() => modules.value.filter(item => ['queued', 'running'].includes(item.status)).length)
 const successCount = computed(() => modules.value.filter(item => item.status === 'success').length)
-const invalidCount = computed(() => modules.value.filter(item => !item.is_available || item.status === 'failed').length)
+const invalidCount = computed(() => modules.value.filter(item => !item.is_available || !item.namespace.trim() || item.status === 'failed').length)
 const currentPreview = computed(() => previewResources.value.find(item => item.kind === activePreviewKind.value))
 
 function errorMessage(error: any, fallback: string) {
@@ -80,6 +80,7 @@ function errorMessage(error: any, fallback: string) {
 
 function statusLabel(module: TechPlatformDeploymentModule) {
   if (!module.is_available) return '文件失效'
+  if (!module.namespace.trim()) return '待配置'
   return ({
     idle: '未部署',
     queued: '排队中',
@@ -90,7 +91,7 @@ function statusLabel(module: TechPlatformDeploymentModule) {
 }
 
 function statusTone(module: TechPlatformDeploymentModule) {
-  if (!module.is_available || module.status === 'failed') return 'danger'
+  if (!module.is_available || !module.namespace.trim() || module.status === 'failed') return 'danger'
   if (module.status === 'success') return 'success'
   if (['queued', 'running'].includes(module.status)) return 'warning'
   return 'muted'
@@ -162,6 +163,10 @@ function openEdit(module: TechPlatformDeploymentModule) {
 async function saveModule() {
   if (!draft.value.site_id || !draft.value.dockerfile_path.trim()) {
     toast.warning('请选择仓库并填写 Dockerfile 路径')
+    return
+  }
+  if (!draft.value.namespace.trim()) {
+    toast.warning('请填写技术中台命名空间')
     return
   }
   saving.value = true
@@ -339,7 +344,7 @@ onUnmounted(() => {
               {{ module.harbor_project }}/{{ module.repository_name }}
             </span>
             <span class="text-muted-foreground">命名空间</span>
-            <span class="truncate text-right font-mono-data">{{ module.namespace }}</span>
+            <span class="truncate text-right font-mono-data" :class="module.namespace ? '' : 'text-destructive'">{{ module.namespace || '未配置' }}</span>
             <span class="text-muted-foreground">端口映射</span>
             <span class="text-right font-mono-data">{{ module.service_port }} → {{ module.container_port }}</span>
             <span class="text-muted-foreground">中台 appId</span>
@@ -356,6 +361,10 @@ onUnmounted(() => {
             <CircleOff class="mt-0.5 size-4 shrink-0" />
             Dockerfile 已不存在，重新扫描或修改路径后才能部署。
           </div>
+          <div v-else-if="!module.namespace" class="flex gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-destructive">
+            <AlertTriangle class="mt-0.5 size-4 shrink-0" />
+            请先配置技术中台命名空间。
+          </div>
           <div v-else-if="module.last_error" class="line-clamp-3 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-destructive" :title="module.last_error">
             {{ module.last_error }}
           </div>
@@ -363,11 +372,11 @@ onUnmounted(() => {
 
         <div class="grid grid-cols-2 gap-2 border-t p-3 sm:grid-cols-3">
           <Button variant="ghost" size="sm" @click="openEdit(module)"><Pencil class="size-3.5" />配置</Button>
-          <Button variant="ghost" size="sm" @click="openPreview(module)"><Eye class="size-3.5" />预览</Button>
+          <Button variant="ghost" size="sm" :disabled="!module.namespace" @click="openPreview(module)"><Eye class="size-3.5" />预览</Button>
           <Button
             variant="ghost"
             size="sm"
-            :disabled="!module.platform_app_id || operationId === `${module.id}:validate`"
+            :disabled="!module.namespace || !module.platform_app_id || operationId === `${module.id}:validate`"
             @click="validateModule(module)"
           >
             <Loader2 v-if="operationId === `${module.id}:validate`" class="size-3.5 animate-spin" />
@@ -377,7 +386,7 @@ onUnmounted(() => {
           <Button
             size="sm"
             :class="module.last_task_id ? '' : 'sm:col-span-2'"
-            :disabled="!module.is_available || ['queued', 'running'].includes(module.status) || operationId === `${module.id}:deploy`"
+            :disabled="!module.is_available || !module.namespace || ['queued', 'running'].includes(module.status) || operationId === `${module.id}:deploy`"
             @click="deployModule(module)"
           >
             <Loader2 v-if="operationId === `${module.id}:deploy`" class="size-3.5 animate-spin" />
@@ -425,7 +434,7 @@ onUnmounted(() => {
           <div class="space-y-2"><Label for="deploy-context">构建上下文</Label><Input id="deploy-context" v-model="draft.build_context" class="h-11 font-mono-data" /></div>
           <div class="grid grid-cols-2 gap-3">
             <div class="space-y-2"><Label for="deploy-app">应用名</Label><Input id="deploy-app" v-model="draft.app_name" class="h-11" placeholder="扫描时自动生成" /></div>
-            <div class="space-y-2"><Label for="deploy-namespace">命名空间</Label><Input id="deploy-namespace" v-model="draft.namespace" class="h-11" /></div>
+            <div class="space-y-2"><Label for="deploy-namespace">命名空间 *</Label><Input id="deploy-namespace" v-model="draft.namespace" class="h-11" placeholder="请手动填写" required /></div>
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div class="space-y-2"><Label for="deploy-harbor-project">Harbor 项目</Label><Input id="deploy-harbor-project" v-model="draft.harbor_project" class="h-11" /></div>

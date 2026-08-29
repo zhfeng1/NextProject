@@ -82,7 +82,6 @@ class Settings(BaseSettings):
     tech_platform_verify_ssl: bool = Field(default=False, alias="TECH_PLATFORM_VERIFY_SSL")
     harbor_registry: str = Field(default="harbor.trscd.com.cn", alias="HARBOR_REGISTRY")
     harbor_project: str = Field(default="ocean-km", alias="HARBOR_PROJECT")
-    tech_platform_namespace: str = Field(default="ocean-km", alias="TECH_PLATFORM_NAMESPACE")
     docker_build_platform: str = Field(default="linux/amd64", alias="DOCKER_BUILD_PLATFORM")
     default_task_timeout_seconds: int = 1800
     enable_internal_task_fallback: bool = True

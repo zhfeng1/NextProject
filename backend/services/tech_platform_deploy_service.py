@@ -442,7 +442,7 @@ class TechPlatformDeployService:
                     dockerfile_path=rel_path,
                     build_context=context if context not in {"", "."} else ".",
                     app_name=module_name,
-                    namespace=settings.tech_platform_namespace,
+                    namespace="",
                     harbor_project=settings.harbor_project,
                     repository_name=module_name,
                     app_type="2",
@@ -490,7 +490,7 @@ class TechPlatformDeployService:
             dockerfile_path=dockerfile_path,
             build_context=build_context,
             app_name=payload.app_name or name,
-            namespace=payload.namespace or settings.tech_platform_namespace,
+            namespace=payload.namespace or "",
             harbor_project=payload.harbor_project or settings.harbor_project,
             repository_name=payload.repository_name or name,
             app_type=payload.app_type,
@@ -590,6 +590,8 @@ class TechPlatformDeployService:
         image: str = "",
     ) -> dict[str, Any]:
         module = await self._project_module(db, project_id, module_id, current_user)
+        if not module.namespace.strip():
+            raise HTTPException(status_code=409, detail="请先配置技术中台命名空间")
         settings = get_settings()
         preview_image = image.strip() or (
             f"{settings.harbor_registry}/{module.harbor_project}/{module.repository_name}:preview"
@@ -651,6 +653,8 @@ class TechPlatformDeployService:
             raise HTTPException(
                 status_code=409, detail="Dockerfile 已不存在，请修复路径或删除模块"
             )
+        if not module.namespace.strip():
+            raise HTTPException(status_code=409, detail="请先配置技术中台命名空间")
         repo_root = project_service.repo_root(project_id, site.name)
         self.resolve_repo_path(
             repo_root, module.dockerfile_path, field="Dockerfile", kind="file"
