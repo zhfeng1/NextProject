@@ -15,6 +15,7 @@ from backend.models.version import SiteVersion
 from backend.models.conversation import Conversation, ConversationMessage
 from backend.models.requirement import SiteRequirementEvent, SiteRequirementSnapshot
 from backend.models.repo_git_operation import RepoGitOperation
+from backend.models.tech_platform import TechPlatformDeploymentModule
 
 Task = AgentTask
 TaskLog = AgentTaskLog
@@ -44,6 +45,7 @@ __all__ = [
     "TaskLog",
     "TaskRepository",
     "TaskStatus",
+    "TechPlatformDeploymentModule",
     "TaskType",
     "Template",
     "User",

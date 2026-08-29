@@ -4,7 +4,7 @@ export type { Task } from '@/types/models'
 
 export interface TaskPayload {
   site_id: string
-  task_type: 'develop_code' | 'deploy_local' | 'test_local_playwright'
+  task_type: 'develop_code' | 'deploy_local' | 'deploy_tech_platform' | 'test_local_playwright'
   provider?: string
   prompt?: string
   current_url?: string

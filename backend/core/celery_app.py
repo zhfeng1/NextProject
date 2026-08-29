@@ -30,8 +30,8 @@ celery_app.conf.update(
     task_routes={
         "backend.tasks.develop_code.develop_code_task": {"queue": "ai-tasks"},
         "backend.tasks.deploy.deploy_task": {"queue": "deploy-tasks"},
+        "backend.tasks.deploy.tech_platform_deploy_task": {"queue": "deploy-tasks"},
         "backend.tasks.test.playwright_smoke_task": {"queue": "test-tasks"},
         "backend.tasks.clone_repo.clone_repo_task": {"queue": "default"},
     },
 )
-

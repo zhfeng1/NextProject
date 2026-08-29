@@ -7,6 +7,7 @@ from backend.api.v2.skills import router as skills_router
 from backend.api.v2.sites import router as sites_router
 from backend.api.v2.tasks import router as tasks_router
 from backend.api.v2.templates import router as templates_router
+from backend.api.v2.tech_platform import router as tech_platform_router
 from backend.api.v2.versions import router as versions_router
 from backend.api.v2.websocket import router as websocket_router
 
@@ -20,6 +21,7 @@ __all__ = [
     "skills_router",
     "tasks_router",
     "templates_router",
+    "tech_platform_router",
     "versions_router",
     "websocket_router",
 ]

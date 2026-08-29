@@ -72,6 +72,20 @@ class Settings(BaseSettings):
     claude_auth_cmd: str = Field(default="claude login", alias="CLAUDE_AUTH_CMD")
 
     playwright_base_url: str = Field(default="http://127.0.0.1:8080", alias="PLAYWRIGHT_BASE_URL")
+    tech_platform_base_url: str = Field(default="http://192.168.1.15:90", alias="TECH_PLATFORM_BASE_URL")
+    tech_platform_username: str = Field(default="", alias="TECH_PLATFORM_USERNAME")
+    tech_platform_password: str = Field(default="", alias="TECH_PLATFORM_PASSWORD")
+    tech_platform_system_id: str = Field(
+        default="B6EF6BD39FE8C3DCA1B5E13AAD516BC3",
+        alias="TECH_PLATFORM_SYSTEM_ID",
+    )
+    tech_platform_verify_ssl: bool = Field(default=False, alias="TECH_PLATFORM_VERIFY_SSL")
+    harbor_registry: str = Field(default="harbor.trscd.com.cn", alias="HARBOR_REGISTRY")
+    harbor_username: str = Field(default="", alias="HARBOR_USERNAME")
+    harbor_password: str = Field(default="", alias="HARBOR_PASSWORD")
+    harbor_project: str = Field(default="ocean-km", alias="HARBOR_PROJECT")
+    tech_platform_namespace: str = Field(default="ocean-km", alias="TECH_PLATFORM_NAMESPACE")
+    docker_build_platform: str = Field(default="linux/amd64", alias="DOCKER_BUILD_PLATFORM")
     default_task_timeout_seconds: int = 1800
     enable_internal_task_fallback: bool = True
     create_tables_on_startup: bool = True
@@ -87,6 +101,7 @@ class Settings(BaseSettings):
         "test_local_playwright",
         "deploy_local",
         "deploy_apollo",
+        "deploy_tech_platform",
     )
     default_org_slug: str = "default-org"
     default_org_name: str = "Default Organization"

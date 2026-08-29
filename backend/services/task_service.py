@@ -33,7 +33,14 @@ from backend.services.skill_service import skill_service
 from backend.services.websocket_service import websocket_manager
 
 SUPPORTED_PROVIDERS = set(SUPPORTED_TOOL_IDS)
-SUPPORTED_TASK_TYPES = {"develop_code", "test_local_playwright", "deploy_local", "deploy_apollo", "clone_repo"}
+SUPPORTED_TASK_TYPES = {
+    "develop_code",
+    "test_local_playwright",
+    "deploy_local",
+    "deploy_apollo",
+    "deploy_tech_platform",
+    "clone_repo",
+}
 DEFAULT_STACK_PROMPT = "[项目约定]\n默认后端: Python\n默认前端: Vue\n除非本次需求明确说明，否则按以上技术栈进行修改与新增。"
 BOARD_STATUSES = {"todo", "queued", "running", "review", "done", "failed", "canceled"}
 EXEC_TO_BOARD_STATUS = {
@@ -999,6 +1006,10 @@ class TaskService:
                 from backend.tasks.deploy import deploy_task
 
                 deploy_task.delay(str(task.id))
+            elif task.task_type == "deploy_tech_platform":
+                from backend.tasks.deploy import tech_platform_deploy_task
+
+                tech_platform_deploy_task.delay(str(task.id))
             elif task.task_type == "test_local_playwright":
                 from backend.tasks.test import smoke_test_task
 

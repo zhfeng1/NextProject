@@ -28,22 +28,25 @@ import {
   Boxes,
   CircleCheckBig,
   MessageSquare,
+  Rocket,
 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import BuildLogModal from '@/components/BuildLogModal.vue'
 import ModelProviderSettings from '@/components/ModelProviderSettings.vue'
 import GitCommitGraph from '@/components/GitCommitGraph.vue'
+import TechPlatformDeployments from '@/views/Projects/components/TechPlatformDeployments.vue'
 
 const route = useRoute()
 const router = useRouter()
 const projectStore = useProjectStore()
 
-type ProjectSection = 'repositories' | 'git' | 'models' | 'archive'
+type ProjectSection = 'repositories' | 'git' | 'models' | 'deployments' | 'archive'
 
 const SECTION_QUERY: Record<ProjectSection, string | undefined> = {
   repositories: undefined,
   git: 'git',
   models: 'model-config',
+  deployments: 'tech-platform',
   archive: 'archive',
 }
 
@@ -115,6 +118,7 @@ function normalizeSection(value: unknown): ProjectSection {
   const section = Array.isArray(value) ? value[0] : String(value || '')
   if (section === 'git') return 'git'
   if (section === 'models' || section === 'model-config') return 'models'
+  if (section === 'deployments' || section === 'tech-platform') return 'deployments'
   if (section === 'archive' || section === 'archived') return 'archive'
   return 'repositories'
 }
@@ -140,6 +144,13 @@ const sectionTabs = computed(() => [
     label: '模型配置',
     description: 'Provider 覆盖',
     icon: Bot,
+    count: null,
+  },
+  {
+    id: 'deployments' as const,
+    label: '技术中台',
+    description: '镜像与 K8s',
+    icon: Rocket,
     count: null,
   },
   {
@@ -541,7 +552,7 @@ async function rollbackProjectCommit(commit: GitGraphCommit) {
     </section>
 
     <nav aria-label="项目详情分区" class="rounded-xl border bg-muted/25 p-1.5">
-      <div role="tablist" aria-label="项目详情" class="grid grid-cols-2 gap-1.5 md:grid-cols-4">
+      <div role="tablist" aria-label="项目详情" class="grid grid-cols-2 gap-1.5 md:grid-cols-5">
         <button
           v-for="(tab, index) in sectionTabs"
           :id="`project-tab-${tab.id}`"
@@ -750,6 +761,15 @@ async function rollbackProjectCommit(commit: GitGraphCommit) {
         description="仅在这个项目内覆盖全局 Provider；未配置兼容项时自动使用全局模型。"
       />
     </section>
+
+    <TechPlatformDeployments
+      v-else-if="activeSection === 'deployments'"
+      id="project-section-deployments"
+      role="tabpanel"
+      aria-labelledby="project-tab-deployments"
+      :project-id="projectId"
+      :repos="project.repos || []"
+    />
 
     <section
       v-else
