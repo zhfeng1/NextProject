@@ -30,6 +30,12 @@ if [ ! -f ".env" ]; then
 fi
 
 # ── 2. 解析参数 ───────────────────────────────────────────────
+if python3 scripts/sync_host_docker_auth.py data/docker-config; then
+    log_ok "已同步宿主机 Docker 登录状态"
+else
+    log_warn "未同步宿主机 Docker 登录状态，私有镜像推送可能失败"
+fi
+
 BUILD_FLAG=""
 DETACH_FLAG="-d"
 COMPOSE_PROFILE_FLAGS=()

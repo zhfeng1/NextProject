@@ -82,8 +82,6 @@ services:
       - TECH_PLATFORM_SYSTEM_ID=${TECH_PLATFORM_SYSTEM_ID:-B6EF6BD39FE8C3DCA1B5E13AAD516BC3}
       - TECH_PLATFORM_VERIFY_SSL=${TECH_PLATFORM_VERIFY_SSL:-false}
       - HARBOR_REGISTRY=${HARBOR_REGISTRY:-harbor.trscd.com.cn}
-      - HARBOR_USERNAME=${HARBOR_USERNAME:-}
-      - HARBOR_PASSWORD=${HARBOR_PASSWORD:-}
       - HARBOR_PROJECT=${HARBOR_PROJECT:-ocean-km}
       - TECH_PLATFORM_NAMESPACE=${TECH_PLATFORM_NAMESPACE:-ocean-km}
       - DOCKER_BUILD_PLATFORM=${DOCKER_BUILD_PLATFORM:-linux/amd64}
@@ -268,6 +266,7 @@ services:
       - ./data:/shared
       - ./generated_sites:/generated_sites
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./data/docker-config:/root/.docker:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
       - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://admin:nextproject2025@postgres:5432/nextproject}
@@ -293,8 +292,6 @@ services:
       - TECH_PLATFORM_SYSTEM_ID=${TECH_PLATFORM_SYSTEM_ID:-B6EF6BD39FE8C3DCA1B5E13AAD516BC3}
       - TECH_PLATFORM_VERIFY_SSL=${TECH_PLATFORM_VERIFY_SSL:-false}
       - HARBOR_REGISTRY=${HARBOR_REGISTRY:-harbor.trscd.com.cn}
-      - HARBOR_USERNAME=${HARBOR_USERNAME:-}
-      - HARBOR_PASSWORD=${HARBOR_PASSWORD:-}
       - HARBOR_PROJECT=${HARBOR_PROJECT:-ocean-km}
       - TECH_PLATFORM_NAMESPACE=${TECH_PLATFORM_NAMESPACE:-ocean-km}
       - DOCKER_BUILD_PLATFORM=${DOCKER_BUILD_PLATFORM:-linux/amd64}

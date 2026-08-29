@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import shutil
 import subprocess
 import tempfile
@@ -29,43 +28,6 @@ from backend.services.tech_platform_deploy_service import (
     validate_and_deploy_resources,
 )
 from backend.tasks._helpers import task_db_session
-
-
-async def _docker_login(
-    *, registry: str, username: str, password: str, docker_config: str
-) -> None:
-    if not shutil.which("docker"):
-        raise RuntimeError("Celery 运行镜像中缺少 docker 命令")
-    if not registry or "://" in registry:
-        raise RuntimeError(
-            "HARBOR_REGISTRY 必须是 registry 主机名，不能包含 URL scheme"
-        )
-    if not username or not password:
-        raise RuntimeError("HARBOR_USERNAME/HARBOR_PASSWORD 未配置")
-    env = {**os.environ, "DOCKER_CONFIG": docker_config}
-    proc = await asyncio.create_subprocess_exec(
-        "docker",
-        "login",
-        registry,
-        "--username",
-        username,
-        "--password-stdin",
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-        env=env,
-    )
-    try:
-        output, _ = await asyncio.wait_for(
-            proc.communicate((password + "\n").encode()), timeout=60
-        )
-    except TimeoutError:
-        proc.kill()
-        await proc.wait()
-        raise RuntimeError("Harbor 登录超时")
-    if proc.returncode != 0:
-        detail = redact_execution_text(output.decode("utf-8", errors="ignore"))[-600:]
-        raise RuntimeError(f"Harbor 登录失败: {detail}")
 
 
 async def _git_credentials(db: Any, site_id: str) -> tuple[str, str]:
@@ -177,7 +139,6 @@ async def _run_tech_platform_deploy(
 
     checkout_base = Path(tempfile.mkdtemp(prefix="nextproject-tech-deploy-"))
     checkout_root = checkout_base / "checkout"
-    docker_config_dir = tempfile.mkdtemp(prefix="nextproject-docker-config-")
     repo_root: Path | None = None
     image = ""
     commit_sha = ""
@@ -235,15 +196,11 @@ async def _run_tech_platform_deploy(
             image = str(snapshot["image"])
 
             await task_service.append_log(
-                db, task, f"[2/7] 登录 Harbor 并构建镜像 {image}", source="deploy"
+                db,
+                task,
+                f"[2/7] 使用宿主机 Docker 环境构建镜像 {image}",
+                source="deploy",
             )
-            await _docker_login(
-                registry=str(snapshot["harbor_registry"]),
-                username=settings.harbor_username,
-                password=settings.harbor_password,
-                docker_config=docker_config_dir,
-            )
-            docker_env = {"DOCKER_CONFIG": docker_config_dir}
             code, _ = await task_service.run_shell_command(
                 db,
                 task,
@@ -262,7 +219,6 @@ async def _run_tech_platform_deploy(
                 ],
                 cwd=checkout_root,
                 timeout_sec=settings.default_task_timeout_seconds,
-                extra_env=docker_env,
                 log_source="docker",
                 command_preview=(
                     f"$ docker build --platform {snapshot['docker_build_platform']} -t {image} "
@@ -281,7 +237,6 @@ async def _run_tech_platform_deploy(
                 ["docker", "push", image],
                 cwd=checkout_root,
                 timeout_sec=settings.default_task_timeout_seconds,
-                extra_env=docker_env,
                 log_source="docker",
             )
             if code != 0:
@@ -409,7 +364,6 @@ async def _run_tech_platform_deploy(
         if image and shutil.which("docker"):
             subprocess.run(
                 ["docker", "image", "rm", image],
-                env={**os.environ, "DOCKER_CONFIG": docker_config_dir},
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=False,
@@ -431,7 +385,6 @@ async def _run_tech_platform_deploy(
                     check=False,
                 )
         shutil.rmtree(checkout_base, ignore_errors=True)
-        shutil.rmtree(docker_config_dir, ignore_errors=True)
         release_site_lock(lock_id, task_id)
 
 

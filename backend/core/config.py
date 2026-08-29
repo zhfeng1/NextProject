@@ -81,8 +81,6 @@ class Settings(BaseSettings):
     )
     tech_platform_verify_ssl: bool = Field(default=False, alias="TECH_PLATFORM_VERIFY_SSL")
     harbor_registry: str = Field(default="harbor.trscd.com.cn", alias="HARBOR_REGISTRY")
-    harbor_username: str = Field(default="", alias="HARBOR_USERNAME")
-    harbor_password: str = Field(default="", alias="HARBOR_PASSWORD")
     harbor_project: str = Field(default="ocean-km", alias="HARBOR_PROJECT")
     tech_platform_namespace: str = Field(default="ocean-km", alias="TECH_PLATFORM_NAMESPACE")
     docker_build_platform: str = Field(default="linux/amd64", alias="DOCKER_BUILD_PLATFORM")
