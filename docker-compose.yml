@@ -266,7 +266,7 @@ services:
       - ./data:/shared
       - ./generated_sites:/generated_sites
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./data/docker-config:/root/.docker:ro
+      - ./data/docker-config/config.json:/root/.docker/config.json:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
       - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://admin:nextproject2025@postgres:5432/nextproject}

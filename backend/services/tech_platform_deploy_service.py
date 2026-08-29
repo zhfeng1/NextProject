@@ -59,6 +59,7 @@ metadata:
   namespace: {{ namespace }}
 spec:
   replicas: 1
+  revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: {{ app_name }}
@@ -66,6 +67,7 @@ spec:
     metadata:
       labels:
         app: {{ app_name }}
+      namespace: {{ namespace }}
     spec:
       containers:
         - name: {{ app_name }}
@@ -74,6 +76,14 @@ spec:
           ports:
             - name: http
               containerPort: {{ container_port }}
+              protocol: TCP
+          livenessProbe:
+            tcpSocket:
+              port: {{ container_port }}
+            failureThreshold: 3
+            successThreshold: 1
+            initialDelaySeconds: 30
+            periodSeconds: 60
 """
 
 DEFAULT_SERVICE_TEMPLATE = """apiVersion: v1
