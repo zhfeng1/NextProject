@@ -3,7 +3,6 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { conversationsAPI, type Conversation, type ConversationGitState, type ConversationMessage } from '@/api/conversations'
@@ -1199,16 +1198,6 @@ onBeforeUnmount(() => {
             </div>
             <div v-if="activeConv.completion_error" role="alert" class="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
               {{ activeConv.completion_error }}
-            </div>
-          </section>
-
-          <section class="space-y-2">
-            <div class="text-sm font-medium">默认阶段</div>
-            <div class="flex flex-wrap gap-1.5">
-              <Badge variant="outline">研究</Badge>
-              <Badge variant="outline">计划</Badge>
-              <Badge variant="outline">执行</Badge>
-              <Badge variant="outline">评审</Badge>
             </div>
           </section>
 

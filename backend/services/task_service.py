@@ -52,14 +52,6 @@ EXEC_TO_BOARD_STATUS = {
     TaskStatus.FAILED.value: "failed",
     TaskStatus.CANCELED.value: "canceled",
 }
-WORKFLOW_STAGE_LABELS = {
-    "research": "研究",
-    "ideate": "构思",
-    "plan": "计划",
-    "execute": "执行",
-    "optimize": "优化",
-    "review": "评审",
-}
 ADAPTER_URLS = {
     tool_id: spec.adapter_url
     for tool_id in SUPPORTED_PROVIDERS
@@ -890,6 +882,7 @@ class TaskService:
             )
         # Security: strip user-supplied 'command' to prevent arbitrary command execution
         payload_data.pop("command", None)
+        payload_data.pop("workflow_stages", None)
         task = Task(
             id=str(uuid.uuid4()),
             site_id=site.id,
@@ -903,7 +896,7 @@ class TaskService:
             provider=normalized_provider if normalized_task_type == "develop_code" else "",
             task_type=normalized_task_type,
             status=TaskStatus.QUEUED.value,
-            workflow_stages_json=list(payload_data.get("workflow_stages") or []),
+            workflow_stages_json=[],
             runtime_config_dir=str(Path("/tmp/nextproject-task-runtime") / str(uuid.uuid4())),
         )
         task.runtime_config_dir = str(Path("/tmp/nextproject-task-runtime") / str(task.id))
@@ -958,6 +951,7 @@ class TaskService:
             project_id=str(project.id),
         )
         payload_data.pop("command", None)
+        payload_data.pop("workflow_stages", None)
         primary_site = sites[0]
         task = Task(
             id=str(uuid.uuid4()),
@@ -972,7 +966,7 @@ class TaskService:
             provider=provider,
             task_type=task_type,
             status=TaskStatus.QUEUED.value,
-            workflow_stages_json=list(payload_data.get("workflow_stages") or []),
+            workflow_stages_json=[],
             runtime_config_dir=str(Path("/tmp/nextproject-task-runtime") / str(uuid.uuid4())),
         )
         task.runtime_config_dir = str(Path("/tmp/nextproject-task-runtime") / str(task.id))
@@ -1536,10 +1530,6 @@ class TaskService:
             )
         else:
             context_parts.append("[参与仓库]\n本任务需要在项目根目录下同时协调以下仓库修改：\n" + "\n".join(repo_lines))
-        workflow_stages = list(getattr(task, "workflow_stages_json", None) or payload.get("workflow_stages") or [])
-        if workflow_stages:
-            labels = [WORKFLOW_STAGE_LABELS.get(stage, stage) for stage in workflow_stages]
-            context_parts.append("[本次任务阶段要求]\n请按以下阶段组织思考、实现和交付说明：" + "、".join(labels))
         current_url = self._normalize_context_url((payload.get("current_url") or "").strip(), primary_site)
         selected_xpath = (payload.get("selected_xpath") or "").strip()
         console_errors = (payload.get("console_errors") or "").strip()

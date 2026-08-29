@@ -150,7 +150,7 @@ async def test_project_task_creates_one_board_item_for_multiple_repos(
     task = create_response.json()["task"]
     assert task["project_id"] == project["id"]
     assert task["board_status"] == "queued"
-    assert task["workflow_stages"] == ["research", "plan", "execute", "review"]
+    assert task["workflow_stages"] == []
     assert len(task["repositories"]) == 2
 
     board_response = await client.get(
