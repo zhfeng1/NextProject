@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     )
     llm_dialog_log_enabled: bool = Field(default=False, alias="LLM_DIALOG_LOG_ENABLED")
     llm_dialog_log_max_chars: int = Field(default=4000, alias="LLM_DIALOG_LOG_MAX_CHARS")
+    overview_archive_rollup_enabled: bool = Field(default=False, alias="OVERVIEW_ARCHIVE_ROLLUP_ENABLED")
 
     sub_site_port_start: int = Field(default=19100, alias="SUB_SITE_PORT_START")
     sub_site_port_end: int = Field(default=19999, alias="SUB_SITE_PORT_END")
