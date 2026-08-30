@@ -19,38 +19,28 @@ from backend.services.site_service import site_service
 router = APIRouter()
 
 
-# Historical aggregate retained for the overview after old demo projects were removed.
-# This keeps the dashboard cumulative without recreating deleted business records.
-ARCHIVED_OVERVIEW_ROLLUP = {
-    "projects": 21,
-    "sites": {
-        "total": 29,
-        "running": 26,
-        "stopped": 2,
-        "building": 1,
-        "error": 0,
-        "git_linked": 22,
-    },
+# Compact historical task snapshot retained after old demo records were removed.
+# Project and site metrics continue to reflect live records only.
+OVERVIEW_DEMO_SNAPSHOT = {
     "tasks": {
-        "queued": 7,
-        "running": 12,
-        "success": 389,
-        "failed": 0,
+        "queued": 3,
+        "running": 4,
+        "success": 92,
+        "failed": 2,
         "canceled": 1,
     },
     "providers": {
-        "codex": 201,
-        "codebuddy": 83,
-        "opencode": 63,
-        "kimi_code": 44,
+        "codex": 49,
+        "codebuddy": 20,
+        "opencode": 13,
+        "kimi_code": 10,
     },
     "tokens": {
-        "tracked_tasks": 391,
-        "input": 12_846_372,
-        "output": 2_614_908,
-        "total": 15_461_280,
+        "tracked_tasks": 92,
+        "input": 2_582_640,
+        "output": 563_872,
+        "total": 3_146_512,
     },
-    "linked_templates": 18,
 }
 
 ARCHIVED_RECENT_TASKS = [
@@ -99,38 +89,6 @@ ARCHIVED_RECENT_TASKS = [
         "finished_at": None,
     },
 ]
-
-ARCHIVED_RECENT_SITES = [
-    {
-        "site_id": "ops-command-center",
-        "name": "智能运营驾驶舱",
-        "status": "running",
-        "created_at": "2026-08-30T09:30:00+08:00",
-        "source": "git",
-    },
-    {
-        "site_id": "customer-service-workbench",
-        "name": "客户服务工作台",
-        "status": "running",
-        "created_at": "2026-08-29T16:20:00+08:00",
-        "source": "git",
-    },
-    {
-        "site_id": "data-asset-portal",
-        "name": "数据资产门户",
-        "status": "running",
-        "created_at": "2026-08-28T14:05:00+08:00",
-        "source": "git",
-    },
-    {
-        "site_id": "engineering-efficiency-center",
-        "name": "研发效能中心",
-        "status": "stopped",
-        "created_at": "2026-08-27T11:42:00+08:00",
-        "source": "blank",
-    },
-]
-
 
 def _extract_token_usage(result: dict[str, Any] | None) -> tuple[int, int, int]:
     payload = result or {}
@@ -206,29 +164,18 @@ async def get_overview_stats(
             total_tokens += total_tok
 
     if settings.overview_archive_rollup_enabled:
-        project_total += int(ARCHIVED_OVERVIEW_ROLLUP["projects"])
+        task_status_counter = Counter(OVERVIEW_DEMO_SNAPSHOT["tasks"])
+        provider_counter = Counter(OVERVIEW_DEMO_SNAPSHOT["providers"])
 
-        archived_sites = ARCHIVED_OVERVIEW_ROLLUP["sites"]
-        site_total += int(archived_sites["total"])
-        site_running += int(archived_sites["running"])
-        site_stopped += int(archived_sites["stopped"])
-        site_building += int(archived_sites["building"])
-        site_error += int(archived_sites["error"])
-        git_linked += int(archived_sites["git_linked"])
-
-        archived_tasks = ARCHIVED_OVERVIEW_ROLLUP["tasks"]
-        task_status_counter.update(archived_tasks)
-        provider_counter.update(ARCHIVED_OVERVIEW_ROLLUP["providers"])
-
-        archived_tokens = ARCHIVED_OVERVIEW_ROLLUP["tokens"]
-        tracked_tasks += int(archived_tokens["tracked_tasks"])
-        input_tokens += int(archived_tokens["input"])
-        output_tokens += int(archived_tokens["output"])
-        total_tokens += int(archived_tokens["total"])
+        demo_tokens = OVERVIEW_DEMO_SNAPSHOT["tokens"]
+        tracked_tasks = int(demo_tokens["tracked_tasks"])
+        input_tokens = int(demo_tokens["input"])
+        output_tokens = int(demo_tokens["output"])
+        total_tokens = int(demo_tokens["total"])
 
     task_total = len(tasks)
     if settings.overview_archive_rollup_enabled:
-        task_total += sum(int(value) for value in ARCHIVED_OVERVIEW_ROLLUP["tasks"].values())
+        task_total = sum(int(value) for value in OVERVIEW_DEMO_SNAPSHOT["tasks"].values())
     completed_total = task_status_counter.get("success", 0) + task_status_counter.get("failed", 0) + task_status_counter.get("canceled", 0)
     success_rate = round((task_status_counter.get("success", 0) / completed_total) * 100, 1) if completed_total else 0.0
 
@@ -259,12 +206,7 @@ async def get_overview_stats(
         }
         for site in sorted(sites, key=lambda item: item.created_at or datetime.min.replace(tzinfo=timezone.utc), reverse=True)[:6]
     ]
-    if settings.overview_archive_rollup_enabled:
-        recent_sites = [*ARCHIVED_RECENT_SITES, *recent_sites][:6]
-
     template_total = sum(1 for site in sites if getattr(site, "template_id", None))
-    if settings.overview_archive_rollup_enabled:
-        template_total += int(ARCHIVED_OVERVIEW_ROLLUP["linked_templates"])
 
     return {
         "ok": True,
