@@ -24,8 +24,8 @@ router = APIRouter()
 OVERVIEW_DEMO_SNAPSHOT = {
     "tasks": {
         "queued": 3,
-        "running": 4,
-        "success": 92,
+        "running": 0,
+        "success": 96,
         "failed": 2,
         "canceled": 1,
     },
@@ -84,9 +84,9 @@ ARCHIVED_RECENT_TASKS = [
         "title": "优化构建流水线性能",
         "provider": "kimi_code",
         "task_type": "develop_code",
-        "status": "running",
+        "status": "success",
         "created_at": "2026-08-30T08:31:00+08:00",
-        "finished_at": None,
+        "finished_at": "2026-08-30T08:44:00+08:00",
     },
 ]
 
