@@ -23,9 +23,9 @@ router = APIRouter()
 # Project and site metrics continue to reflect live records only.
 OVERVIEW_DEMO_SNAPSHOT = {
     "tasks": {
-        "queued": 3,
+        "queued": 0,
         "running": 0,
-        "success": 96,
+        "success": 99,
         "failed": 2,
         "canceled": 1,
     },
@@ -60,7 +60,7 @@ ARCHIVED_RECENT_TASKS = [
         "site_id": "customer-service-workbench",
         "project_id": "",
         "title": "执行核心流程回归测试",
-        "provider": "codebuddy",
+        "provider": "codex",
         "task_type": "test_local_playwright",
         "status": "success",
         "created_at": "2026-08-30T09:12:00+08:00",
@@ -71,22 +71,11 @@ ARCHIVED_RECENT_TASKS = [
         "site_id": "data-asset-portal",
         "project_id": "",
         "title": "发布数据资产门户新版本",
-        "provider": "opencode",
+        "provider": "codex",
         "task_type": "deploy_local",
         "status": "success",
         "created_at": "2026-08-30T08:45:00+08:00",
         "finished_at": "2026-08-30T08:53:00+08:00",
-    },
-    {
-        "id": "archived-task-performance",
-        "site_id": "engineering-efficiency-center",
-        "project_id": "",
-        "title": "优化构建流水线性能",
-        "provider": "kimi_code",
-        "task_type": "develop_code",
-        "status": "success",
-        "created_at": "2026-08-30T08:31:00+08:00",
-        "finished_at": "2026-08-30T08:44:00+08:00",
     },
 ]
 
@@ -194,7 +183,7 @@ async def get_overview_stats(
         for task in tasks[:8]
     ]
     if settings.overview_archive_rollup_enabled:
-        recent_tasks = [*ARCHIVED_RECENT_TASKS, *recent_tasks][:8]
+        recent_tasks = ARCHIVED_RECENT_TASKS[:3]
 
     recent_sites = [
         {
